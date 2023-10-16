@@ -1,12 +1,32 @@
 from sqlalchemy import  String, Column, Date, ForeignKey
+from typing import TypeVar
+
 from sqlalchemy.orm import relationship
 
 from .engine import Base
 
 
+"""
+=======================================================================================================
+Types
+=======================================================================================================
+"""
+
+
+Table = TypeVar("Table", bound="Base")
+
+
+"""
+=======================================================================================================
+Tables
+=======================================================================================================
+"""
+
 
 class WelderTable(Base):
-    __tablename__ = "welders_table"
+    __tablename__ = "welder_table"
+    __domain_model__ = "WelderModel"
+
     kleymo = Column(String(4), primary_key=True)
     full_name = Column(String(), nullable=True)
     birthday = Column(Date(), nullable=True)
@@ -15,10 +35,11 @@ class WelderTable(Base):
     ndts = relationship("NDTSummaryTable", backref="welder")
 
 
-
 class WelderCertificationTable(Base):
-    __tablename__ = "certifications_table"
-    kleymo = Column(String(4), ForeignKey("welders_table.kleymo"))
+    __tablename__ = "welder_certification_table"
+    __domain_model__ = "WelderCertificationModel"
+
+    kleymo = Column(String(4), ForeignKey("welder_table.kleymo"))
     certification_id = Column(String(), nullable=False, primary_key=True)
     job_title = Column(String(), nullable=True)
     certification_number = Column(String(), nullable=True)
@@ -48,12 +69,12 @@ class WelderCertificationTable(Base):
     welding_equipment = Column(String(), nullable=True)
 
 
-
 class NDTSummaryTable(Base):
-    __tablename__ = "ndt_summary"
+    __tablename__ = "ndt_summary_table"
+    __domain_model__ = "NDTModel"
     
     sicil_number = Column(String(), nullable=True)
-    kleymo = Column(String(4), ForeignKey("welders_table.kleymo"))
+    kleymo = Column(String(4), ForeignKey("welder_table.kleymo"))
     birthday = Column(Date(), nullable=True)
     passport_number = Column(String(), nullable=True)
     nation = Column(String(), nullable=True)
@@ -79,12 +100,12 @@ class NDTSummaryTable(Base):
     ndt_id = Column(String(), primary_key=True)
 
 
-
 class NDTTable(Base):
-    __tablename__ = "ndt"
+    __tablename__ = "ndt_table"
+    __domain_model__ = "NDTSummaryTable"
     
     sicil_number = Column(String(), nullable=True)
-    kleymo = Column(String(4), ForeignKey("welders_table.kleymo"))
+    kleymo = Column(String(4), ForeignKey("welder_table.kleymo"))
     birthday = Column(Date(), nullable=True)
     passport_number = Column(String(), nullable=True)
     nation = Column(String(), nullable=True)

@@ -1,6 +1,14 @@
-aa_input = "111"
+import click
+
+from src.manage_db.commands import ManageWelderTableCommand
 
 
-aa = "nfkrjbfjhrh{0}fdewfr".format(aa_input)
+@click.group()
+def cli(): ...
 
-print(aa)
+
+cli.add_command(ManageWelderTableCommand())
+
+
+if __name__ == "__main__":
+    cli()

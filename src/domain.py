@@ -1,10 +1,11 @@
-from typing import TypeAlias, Sequence
+from typing import Any, TypeAlias, Union, Sequence, TypeVar
 from datetime import date, datetime
 from re import fullmatch
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pandas import DataFrame
 
-from db.db_tables import WelderTable, WelderCertificationTable
+from src.db.db_tables import Table
 
 
 """
@@ -14,7 +15,39 @@ Types
 """
 
 
-Welder: TypeAlias = tuple[WelderTable, Sequence[WelderCertificationTable]]
+Limit: TypeAlias = int
+Offset: TypeAlias = int
+Name: TypeAlias = str
+Kleymo: TypeAlias = str
+CertificationNumber: TypeAlias = str
+Company: TypeAlias = str
+SubCompany: TypeAlias = str
+Project: TypeAlias = str
+DateFrom: TypeAlias = str
+DateBefore: TypeAlias = str
+Count: TypeAlias = int
+DomainModel = TypeVar("DomainModel", bound="BaseDomainModel")
+
+
+"""
+=======================================================================================================
+Base domain model
+=======================================================================================================
+"""
+
+
+class BaseDomainModel(BaseModel):
+    __orm_model__: Table
+
+    class Config:
+        orm_mode = True
+        from_attributes=True
+        allow_population_by_field_name = True
+
+
+    def to_orm(self) -> Table:
+
+        return self.__orm_model__(**self.__dict__)
 
 
 """
@@ -24,7 +57,7 @@ NDT Model
 """
 
 
-class NDTModel(BaseModel):
+class NDTModel(BaseDomainModel):
     sicil_number: str | None = Field(default=None)
     kleymo: str | int = Field(default=None)
     birthday: date | None = Field(default=None)
@@ -75,12 +108,14 @@ Welder Model
 """
 
 
-class WelderModel(BaseModel):
+class WelderModel(BaseDomainModel):
     kleymo: str = Field(max_length=150)
     full_name: str | None  = Field(max_length=150, default=None)
     birthday: str | date | None  = Field(max_length=150, default=None)
     passport_id: str | None = Field(max_length=150, default=None)
-    certifications: list["WelderCertificationModel"] = Field(max_length=150, default=None)
+    certifications: list["WelderCertificationModel"] | None = Field(max_length=150, default=None)
+
+    __orm_model__ = "WelderTable"
 
 
     @field_validator("kleymo")
@@ -89,13 +124,6 @@ class WelderModel(BaseModel):
             return v
         
         raise ValueError(f"Invalid kleymo: {v}")
-    
-
-    def convert_to_orm_model(self) -> Welder:
-        certifications = [WelderCertificationTable(**certification.__dict__) for certification in self.certifications]
-
-
-        return (WelderTable(**self.__dict__), certifications)
 
 
 """
@@ -105,7 +133,7 @@ Welder's Certification Model
 """
 
 
-class WelderCertificationModel(BaseModel):
+class WelderCertificationModel(BaseDomainModel):
     kleymo: str | None = Field(default=None)
     certification_id: str = Field(default=None)
     job_title: str = Field(default=None)
@@ -183,3 +211,50 @@ class WelderCertificationModel(BaseModel):
             return datetime.strptime(v.strip(), "%Y-%m-%d").date()
         
         raise ValueError("Invalid date")
+
+
+
+"""
+=======================================================================================================
+value objects
+=======================================================================================================
+"""
+
+
+class DBRequest(BaseModel):
+    limit: Union[Limit, None] = None
+    offset: Union[Offset, None] = None
+
+
+class WelderRequest(DBRequest):
+    names: Union[Sequence[Name], None] = None
+    kleymos: Union[Sequence[Kleymo], None] = None
+    certification_numbers: Union[Sequence[CertificationNumber], None] = None
+
+
+class NDTRequest(DBRequest):
+    names: Union[Sequence[Name], None] = None
+    kleymos: Union[Sequence[Kleymo], None] = None
+    certification_numbers: Union[Sequence[CertificationNumber], None] = None
+    comps: Union[Sequence[Company], None] = None
+    subcomps: Union[Sequence[SubCompany], None] = None
+    projects: Union[Sequence[Project], None] = None
+    date_from: Union[DateFrom, None] = None
+    date_before: Union[DateBefore, None] = None
+
+
+class ExcelRow(BaseModel):
+    color: str | None = None
+    data: Sequence[int | str | float] | None = None
+
+
+class DBResponse(BaseModel):
+    count: Count
+    summary_count: Count
+    result: Sequence[DomainModel]
+
+
+    def to_dataframe(self) -> DataFrame:
+        return DataFrame(
+            [model.model_dump() for model in self.result]
+        )

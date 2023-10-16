@@ -1,11 +1,28 @@
 from abc import ABCMeta, abstractmethod
-from typing import TypeVar, Union, TypeAlias, Sequence, Literal
+from typing import TypeVar, Union, TypeAlias, Sequence, Literal, Generic
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql.elements import BinaryExpression
+from sqlalchemy import Select, and_, or_, select
 
-from db.db_tables import NDTSummaryTable, NDTTable, WelderCertificationTable, WelderTable
-from domain.value_objects import DBRequest, DBResponse, WelderRequest, NDTRequest , Model, Count, Name
-from domain.domain_models import WelderModel, NDTModel, WelderCertificationModel
+from src.db.db_tables import NDTSummaryTable, NDTTable, WelderCertificationTable, WelderTable
+from src.db.engine import engine
+from src.domain import (
+    WelderModel, 
+    NDTModel, 
+    WelderCertificationModel, 
+    DBRequest, 
+    DBResponse, 
+    WelderRequest,
+    NDTRequest, 
+    DomainModel, 
+    Count, 
+    Name,
+    Kleymo,
+    CertificationNumber,
+    Table
+)
 
 
 """
@@ -15,8 +32,8 @@ Types
 """
 
 
-Table = TypeVar("Table", bound=Union[NDTSummaryTable, NDTTable, WelderCertificationTable, WelderTable])
-Request = TypeVar("Request", DBRequest)
+Request = TypeVar("Request", bound=DBRequest)
+Repository = TypeVar("Repository", bound="BaseRepository")
 Id: TypeAlias = Union[str, float, int]
 
 
@@ -27,13 +44,15 @@ Abstract Repository
 """
 
 
-class Repository(metaclass=ABCMeta):
+class BaseRepository(metaclass=ABCMeta):
     __tablename__: Name
     __tablemodel__: Table
-    session = Session(__tablemodel__)
+    __tabledomain__: DomainModel
+    session = Session(engine)
 
-    @abstractmethod
-    def get(self, id: Id) -> Model: ...
+
+    def get(self, id: Id) -> DomainModel:
+        return self.session.query(self.__tablemodel__).get(id)
 
 
     @abstractmethod
@@ -41,11 +60,19 @@ class Repository(metaclass=ABCMeta):
 
 
     @abstractmethod
-    def _add(self, model: Model) -> None: ...
+    def _add(self, model: DomainModel) -> None: ...
 
 
     @abstractmethod
-    def add(self, data: Sequence[Model]) -> Model: ...
+    def add(self, data: Sequence[DomainModel]) -> None: ...
+
+
+    @abstractmethod
+    def _update(self, model: DomainModel) -> None: ...
+
+
+    @abstractmethod
+    def update(self, data: Sequence[DomainModel]) -> None: ...
 
 
     @property
@@ -55,56 +82,78 @@ class Repository(metaclass=ABCMeta):
 
 """
 =======================================================================================================
+Welder's Certification Repository
+=======================================================================================================
+"""
+
+
+class WelderCertificationRepository(BaseRepository):
+    __tablename__ = "welder_certification_table"
+    __tablemodel__ = WelderCertificationTable
+
+
+    def list(self, request: NDTRequest) -> DBResponse:
+        ...
+
+    
+    def add(self, certifications: Sequence[WelderCertificationModel]) -> Sequence[WelderCertificationModel]:
+        for certification in certifications:
+            self._add(certification)
+
+
+    def _add(self, certification: WelderCertificationModel) -> None:
+        certification_orm = certification.convert_to_orm_model()
+
+        with self.session.begin_nested() as transaction:
+            try:
+                self.session.add(certification_orm)
+
+                transaction.commit()
+            
+                print(f"welder with kleymo {certification.certification_id} successfully appended to {self.__tablename__}")
+
+            except IntegrityError:
+                print(f"ndt with id: {certification.certification_id} already exists")
+                transaction.rollback()
+
+
+"""
+=======================================================================================================
 Welder Repository
 =======================================================================================================
 """
 
 
-class WelderRepository(Repository):
+class WelderRepository(BaseRepository):
     __tablename__ = "welder_table"
     __tablemodel__ = WelderTable
-
-    def get(self, id: Id) -> WelderModel:
-        self.session.query(self.__tablemodel__).get(id)
+    certification_repository = WelderCertificationRepository()
 
 
     def list(self, request: WelderRequest) -> DBResponse:
         ...
 
     
-    def add(self, data: Sequence[WelderModel]) -> Sequence[WelderModel]:
-        ...
+    def add(self, welders: Sequence[WelderModel]) -> Sequence[WelderModel]:
+        for welder in welders:
+            self._add(welder)
 
 
-    def _add(self, model: WelderModel) -> None:
-        ...
+    def _add(self, welder: WelderModel) -> None:
+        welder_orm = welder.to_orm()
+        self.certification_repository.add(welder.certifications)
 
+        with self.session.begin_nested() as transaction:
+            try:
+                self.session.add(welder_orm)
 
-"""
-=======================================================================================================
-Welder's Certification Repository
-=======================================================================================================
-"""
+                transaction.commit()
+            
+                print(f"welder with kleymo {welder.kleymo} successfully appended to {self.__tablename__}")
 
-
-class WelderCertificationRepository(Repository):
-    __tablename__ = "welder_certification_table"
-    __tablemodel__ = WelderCertificationTable
-
-    def get(self, id: Id) -> WelderCertificationModel:
-        self.session.query(self.__tablemodel__).get(id)
-
-
-    def list(self, request: Request) -> DBResponse:
-        ...
-
-    
-    def add(self, data: Sequence[WelderCertificationModel]) -> Sequence[WelderCertificationModel]:
-        ...
-
-
-    def _add(self, model: WelderCertificationModel) -> None:
-        ...
+            except IntegrityError:
+                print(f"ndt with id: {welder.kleymo} already exists")
+                transaction.rollback()
 
 
 """
@@ -114,7 +163,10 @@ NDT Repository
 """
 
 
-class NDTRepository(Repository):
+GenericNDTTable = TypeVar("GenericNDTTable", bound=Union[NDTTable, NDTSummaryTable])
+
+
+class NDTRepository(BaseRepository):
 
     def __init__(self, table_name: Literal["ndt_table",  "ndt_summary_table"]) -> None:
 
@@ -124,24 +176,63 @@ class NDTRepository(Repository):
         match table_name:
             case "ndt_table":
                 self.__tablename__ = "ndt_table"
-                self.__tablemodel__ = NDTTable
+                self.__tablemodel__: NDTTable  = NDTTable
             
             case "ndt_summary_table":
                 self.__tablename__ = "ndt_summary_table"
-                self.__tablemodel__ = NDTSummaryTable
+                self.__tablemodel__: NDTSummaryTable = NDTSummaryTable
 
 
-    def get(self, id: Id) -> NDTModel:
-        self.session.query(self.__tablemodel__).get(id)
+    def get_by_request(self, request: NDTRequest) -> DBResponse:
+        expressions: list[BinaryExpression] = []
+
+        self._get_kleymo_filter(request.kleymos, expressions)
+        self._get_names_filter(request.names, expressions)
+        self._get_certification_number_filter(request.certification_numbers, expressions)
+
+        res = self.session.query(self.__tablemodel__)\
+            .join(WelderTable, self.__tablemodel__.kleymo == WelderTable.kleymo)\
+            .join(WelderCertificationTable, self.__tablemodel__.kleymo == WelderCertificationTable.kleymo)\
+            .filter(
+                or_(*expressions)
+            )
+        
+        return DBResponse(
+            count = res.count(),
+            summary_count = res.count(),
+            result = [
+                NDTModel.model_validate(ndt) for ndt in res.all()
+            ]
+        )
 
 
-    def list(self, request: Request) -> DBResponse:
-        ...
+    def add(self, ndts: Sequence[NDTModel]) -> NDTModel:
+        ... 
 
     
-    def add(self, data: Sequence[NDTModel]) -> NDTModel:
-        ...
+    def update(self, ndts: Sequence[NDTModel]) -> None: ...
 
 
-    def _add(self, model: NDTModel) -> None:
+    def _update(self, ndt: DomainModel) -> None: ...
+
+
+    def _add(self, ndt: NDTModel) -> None:
        ...
+
+    
+    def _get_kleymo_filter(self, kleymos: Sequence[Kleymo], expressions: list[BinaryExpression]) -> None:
+
+        if kleymos != None:
+            expressions.append(self.__tablemodel__.kleymo.in_(kleymos))
+    
+
+    def _get_names_filter(self, names: Sequence[Name], expressions: list[BinaryExpression]) -> None:
+        
+        if names != None:
+            expressions.append(WelderTable.full_name.in_(names))
+
+
+    def _get_certification_number_filter(self, certification_numbers: Sequence[CertificationNumber], expressions: list[BinaryExpression]) -> None:
+        
+        if certification_numbers != None:
+            expressions.append(WelderTable.full_name.in_(certification_numbers))
