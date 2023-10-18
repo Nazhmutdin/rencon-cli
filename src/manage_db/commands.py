@@ -3,7 +3,6 @@ from typing import Literal
 from click import Command, Option, echo
 
 from .help_messages import welder_table_mode_option_help_message
-from .services import AppendModeExecutionService, UpdateModeExecutionService
 
 
 class ManageWelderTableCommand(Command):

@@ -1,9 +1,8 @@
-from typing import Any, TypeAlias, Union, Sequence, TypeVar
+from typing import Any, TypeAlias, Union, Sequence, TypeVar, Generic
 from datetime import date, datetime
 from re import fullmatch
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pandas import DataFrame
 
 from src.db.db_tables import Table
 
@@ -40,9 +39,8 @@ class BaseDomainModel(BaseModel):
     __orm_model__: Table
 
     class Config:
-        orm_mode = True
         from_attributes=True
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
     def to_orm(self) -> Table:
@@ -248,13 +246,7 @@ class ExcelRow(BaseModel):
     data: Sequence[int | str | float] | None = None
 
 
-class DBResponse(BaseModel):
+class DBResponse(BaseModel, Generic[DomainModel]):
     count: Count
     summary_count: Count
     result: Sequence[DomainModel]
-
-
-    def to_dataframe(self) -> DataFrame:
-        return DataFrame(
-            [model.model_dump() for model in self.result]
-        )
