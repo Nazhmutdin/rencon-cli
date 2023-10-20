@@ -1,6 +1,6 @@
 from click import Command, Option, echo
 
-from .services import NDTReportService
+from src.report_commands.ndt_report_services import NDTReportService
 
 
 class NDTReportCommand(Command):
@@ -9,12 +9,13 @@ class NDTReportCommand(Command):
         name = 'ndt-report'
 
         limit_option = Option(['--limit'], type=int)
+        search_date_option = Option(["--search_date"], type=str)
         save_mode_option = Option(['--save_mode'], type=str, help="modes: 'excel', 'pdf'")
 
-        super().__init__(name=name, params=[save_mode_option, limit_option], callback=self.execute)
+        super().__init__(name=name, params=[save_mode_option, limit_option, search_date_option], callback=self.execute)
 
-    
-    def execute(self, save_mode: str, limit: int | None = None) -> None:
-        service = NDTReportService()
 
-        service.report(save_mode, limit)
+    def execute(self, save_mode: str, limit: int | None = None, search_date: str | None = None) -> None:
+        service = NDTReportService(search_date=search_date, save_mode=save_mode, limit=limit)
+
+        service.report()

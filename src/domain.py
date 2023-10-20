@@ -3,6 +3,8 @@ from datetime import date, datetime
 from re import fullmatch
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.cell.cell import Cell
 
 from src.db.db_tables import Table
 
@@ -56,8 +58,9 @@ NDT Model
 
 
 class NDTModel(BaseDomainModel):
-    sicil_number: str | None = Field(default=None)
+    full_name: str | None = Field(default=None)
     kleymo: str | int = Field(default=None)
+    sicil_number: str | None = Field(default=None)
     birthday: date | None = Field(default=None)
     passport_number: str | int | None = Field(default=None)
     nation: str | None = Field(default=None)
@@ -239,11 +242,6 @@ class NDTRequest(DBRequest):
     projects: Union[Sequence[Project], None] = None
     date_from: Union[DateFrom, None] = None
     date_before: Union[DateBefore, None] = None
-
-
-class ExcelRow(BaseModel):
-    color: str | None = None
-    data: Sequence[int | str | float] | None = None
 
 
 class DBResponse(BaseModel, Generic[DomainModel]):

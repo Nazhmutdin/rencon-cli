@@ -21,8 +21,10 @@ GROUPS_FOLDER = pathlib.Path(f"{STATIC_DIR}/groups")
 
 WELDERS_DATA_JSON_PATH = pathlib.Path(f"{STATIC_DIR}/welders_certifications.json")
 WELDER_REGISTRY_PATH = pathlib.Path(f"{STATIC_DIR}/welder_registry.xlsx")
+
 NDT_REGISTRY_PATH = pathlib.Path(f"{STATIC_DIR}/ndt_registry.xlsx")
 NDT_TABLES_FOLDER_PATH = pathlib.Path(f"{STATIC_DIR}/ndt_tables")
+NDT_REPORT_PATH = pathlib.Path(f"{STATIC_DIR}/report.xlsx")
 
 ENGINEERS_DATA_JSON_PATH = pathlib.Path(f"{STATIC_DIR}/engineers_certifications.json")
 ENGINEER_REGISTRY_PATH = pathlib.Path(f"{STATIC_DIR}/engineer_registry.xlsx")
@@ -39,7 +41,7 @@ PATH_TO_POPPLER = pathlib.Path(f"{STATIC_DIR}/poppler/Library/bin")
 PATH_TO_MASKS = pathlib.Path(f"{STATIC_DIR}/masks")
 PATH_TO_PDF_PARSER_SETTINGS = pathlib.Path(f"{STATIC_DIR}/settings.json")
 
-SEARCH_VALUES_FILE = pathlib.Path(f"{STATIC_DIR}/search_values.txt")
+SEARCH_VALUES_FILE = pathlib.Path(f"{STATIC_DIR}/search_settings.json")
 SKIPED_VALUES_FILE = pathlib.Path(f"{STATIC_DIR}/skiped_values.txt")
 
 ACST_DATA_JSON_PATH = pathlib.Path(f"{STATIC_DIR}/acsts.json")
