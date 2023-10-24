@@ -16,6 +16,6 @@ class NDTReportCommand(Command):
 
 
     def execute(self, save_mode: str, limit: int | None = None, search_date: str | None = None) -> None:
-        service = NDTReportService(search_date=search_date, save_mode=save_mode, limit=limit)
+        service = NDTReportService()
 
-        service.report()
+        service.report(search_date=search_date, save_mode=save_mode, limit=limit)

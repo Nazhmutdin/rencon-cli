@@ -6,6 +6,8 @@ Pdf file will contain the first page (Main) with general data and other pages wi
 
 from dataclasses import dataclass
 from datetime import date
+from copy import copy
+from json import dump
 from typing import (
     Literal, 
     Sequence,
@@ -48,39 +50,39 @@ Value Objects
 
 
 @dataclass
-class NDTReportMainPageData:
-    summarized_welder_ndts: Sequence[NDTModel]
-    summarized_welder_group_ndts: Sequence[NDTModel]
+class MainPageData:
+    summarized_welder_ndts: Sequence["DataRow"]
+    summarized_welder_group_ndts: dict[date, "DataRow"]
 
 
 @dataclass
 class DataRow:
-    full_name: str | None
-    kleymo: str | int
-    sicil_number: str | None
-    birthday: str | None
-    passport_number: str | int | None
-    nation: str | None
-    comp: str | None
-    subcon: str | None
-    project: str | None
-    latest_welding_date: str
-    total_weld_1: float | None
-    total_ndt_1: float | None
-    total_accepted_1: float | None
-    total_repair_1: float | None
-    repair_status_1: float | None
-    total_weld_2: float | None
-    total_ndt_2: float | None
-    total_accepted_2: float | None
-    total_repair_2: float | None
-    repair_status_2: float | None
-    total_weld_3: float | None
-    total_ndt_3: float | None
-    total_accepted_3: float | None
-    total_repair_3: float | None
-    repair_status_3: float | None
-    ndt_id: str
+    full_name: str | None = None
+    kleymo: str | int = None
+    sicil_number: str | None = None
+    birthday: str | None = None
+    passport_number: str | int | None = None
+    nation: str | None = None
+    comp: str | None = None
+    subcon: str | None = None
+    project: str | None = None
+    latest_welding_date: str = None
+    total_weld_1: float | None = None
+    total_ndt_1: float | None = None
+    total_accepted_1: float | None = None
+    total_repair_1: float | None = None
+    repair_status_1: float | None = None
+    total_weld_2: float | None = None
+    total_ndt_2: float | None = None
+    total_accepted_2: float | None = None
+    total_repair_2: float | None = None
+    repair_status_2: float | None = None
+    total_weld_3: float | None = None
+    total_ndt_3: float | None = None
+    total_accepted_3: float | None = None
+    total_repair_3: float | None = None
+    repair_status_3: float | None = None
+    ndt_id: str = None
 
     def to_row(self, ws: Worksheet) -> ExcelRow:
         row: ExcelRow = []
@@ -95,6 +97,12 @@ class DataRow:
             row.append(cell)
 
         return row
+    
+
+    def to_main_sheet_row(self, ws: Worksheet) -> ExcelRow:
+        row = self.to_row(ws)
+
+        return [row[1]] + row[10:-1]
 
 
 """
@@ -113,7 +121,7 @@ class NDTReportService:
         saver = self._get_saver(save_mode)
 
         saver.dump_report(
-            preprocessor.preprocess(ndts=ndts, limit=limit)
+            *preprocessor.preprocess(ndts=ndts, limit=limit)
         )
 
 
@@ -130,22 +138,34 @@ class NDTReportService:
 
 class NDTDataPrepocessor:
 
-    def preprocess(self, ndts: Sequence[NDTModel], limit: str | None) -> tuple[NDTReportMainPageData, SortedRows]:
+    def preprocess(self, ndts: Sequence[NDTModel], limit: str | None) -> tuple[MainPageData, SortedRows]:
 
         rows = [DataRow(**ndt.__dict__) for ndt in ndts]
 
-        sorted_rows = self._sort_and_limit_ndts(rows, limit)
+        sorted_rows_by_kleymo = self._sort_and_limit_ndts(rows, limit)
+        sorted_rows_by_date = self._sort_by_date(rows, limit)
 
-        main_page_data = NDTReportMainPageData(
-            summarized_welder_ndts=[self._sum_rows(row_sequence) for row_sequence in sorted_rows.values()],
-            summarized_welder_group_ndts=self._get_summarized_welder_groups_ndts(rows)
+        main_page_data = MainPageData(
+            summarized_welder_ndts = [self._sum_rows(row_sequence) for row_sequence in sorted_rows_by_kleymo.values()],
+            summarized_welder_group_ndts = self._reverse_dict(self._get_summarized_welder_groups_ndts(sorted_rows_by_date))
         )
 
-        return (main_page_data, sorted_rows)
+        return (main_page_data, sorted_rows_by_kleymo)
 
 
-    def _get_summarized_welder_groups_ndts(self, rows: Sequence[DataRow]) -> dict[date, DataRow]:
+    def _reverse_dict(self, rows_dict: dict[date, Sequence[DataRow]]) -> dict[date, Sequence[DataRow]]:
+        return dict(
+            reversed(
+                list(
+                    rows_dict.items()
+                )
+            )
+        )
+
+
+    def _sort_by_date(self, rows: Sequence[DataRow], limit: int | None) -> dict[date, Sequence[DataRow]]:
         sorted_rows: dict[date, list[DataRow]] = {}
+        limit = limit if limit != None else 10
 
         for row in rows:
             welding_date = row.latest_welding_date
@@ -154,10 +174,19 @@ class NDTDataPrepocessor:
                 sorted_rows[welding_date] = [row]
                 continue
 
-            sorted_rows[welding_date].append(row)
+            if len(sorted_rows[welding_date]) < limit:
+                sorted_rows[welding_date].append(row)
+        
+        
+        sorted_rows = {key: sorted_rows[key] for key in list(sorted_rows.keys())[:limit]}
+        
+        return sorted_rows
+
+
+    def _get_summarized_welder_groups_ndts(self, sorted_rows: dict[date, Sequence[DataRow]]) -> dict[date, DataRow]:
 
         return {
-            {key, self._sum_rows(values)} for key, values in sorted_rows.items()
+            key: self._sum_rows(values) for key, values in sorted_rows.items()
         }
 
 
@@ -165,18 +194,18 @@ class NDTDataPrepocessor:
 
         result = DataRow(
             kleymo = rows[0].kleymo,
-            total_weld_1 = sum([row.total_weld_1 for row in rows]),
-            total_ndt_1 = sum([row.total_ndt_1 for row in rows]),
-            total_accepted_1 = sum([row.total_accepted_1 for row in rows]),
-            total_repair_1 = sum([row.total_repair_1 for row in rows]),
-            total_weld_2 = sum([row.total_weld_1 for row in rows]),
-            total_ndt_2 = sum([row.total_ndt_1 for row in rows]),
-            total_accepted_2 = sum([row.total_accepted_1 for row in rows]),
-            total_repair_2 = sum([row.total_repair_1 for row in rows]),
-            total_weld_3 = sum([row.total_weld_1 for row in rows]),
-            total_ndt_3 = sum([row.total_ndt_1 for row in rows]),
-            total_accepted_3 = sum([row.total_accepted_1 for row in rows]),
-            total_repair_3 = sum([row.total_repair_1 for row in rows]),
+            total_weld_1 = sum([row.total_weld_1 for row in rows if row.total_weld_1 != None]),
+            total_ndt_1 = sum([row.total_ndt_1 for row in rows if row.total_ndt_1 != None]),
+            total_accepted_1 = sum([row.total_accepted_1 for row in rows if row.total_accepted_1 != None]),
+            total_repair_1 = sum([row.total_repair_1 for row in rows if row.total_repair_1 != None]),
+            total_weld_2 = sum([row.total_weld_2 for row in rows if row.total_weld_2 != None]),
+            total_ndt_2 = sum([row.total_ndt_2 for row in rows if row.total_ndt_2 != None]),
+            total_accepted_2 = sum([row.total_accepted_2 for row in rows if row.total_accepted_2 != None]),
+            total_repair_2 = sum([row.total_repair_2 for row in rows if row.total_repair_2 != None]),
+            total_weld_3 = sum([row.total_weld_3 for row in rows if row.total_weld_3 != None]),
+            total_ndt_3 = sum([row.total_ndt_3 for row in rows if row.total_ndt_3 != None]),
+            total_accepted_3 = sum([row.total_accepted_3 for row in rows if row.total_accepted_3 != None]),
+            total_repair_3 = sum([row.total_repair_3 for row in rows if row.total_repair_3 != None]),
         )
 
         return self._compute_repair_status(result)
@@ -209,17 +238,17 @@ class NDTDataPrepocessor:
 
     def _compute_repair_status(self, row: DataRow) -> DataRow:
         try:
-            row.repair_status_1 = (row.total_repair_1 / row.total_ndt_1) * 100
+            row.repair_status_1 = 100 - (row.total_accepted_1 / row.total_ndt_1) * 100
         except:
             row.repair_status_1 = float(0)
         
         try:
-            row.repair_status_2 = (row.total_repair_2 / row.total_ndt_2) * 100
+            row.repair_status_2 = 100 - (row.total_accepted_2 / row.total_ndt_2) * 100
         except:
             row.repair_status_2 = float(0)
         
         try:
-            row.repair_status_3 = (row.total_repair_3 / row.total_ndt_3) * 100
+            row.repair_status_3 = 100 - (row.total_accepted_3 / row.total_ndt_3) * 100
         except:
             row.repair_status_3 = float(0)
 
@@ -333,6 +362,7 @@ class NDTReportExcelPreprocessor:
     
     def _truncate_main_sheet(self) -> None:
         ws: Worksheet = self.wb["Main"]
+        ws._charts = []
 
         ws.delete_rows(3, ws.max_row)
 
@@ -371,31 +401,80 @@ Infrastructure Services
 Report savers
 =======================================================================================================
 """
-
+ 
 
 class NDTReportExcelSaveService:
 
-    def dump_report(self, sorted_ndts: SortedRows, selected_ndts: Sequence[NDTModel]) -> None:
+    def dump_report(self, main_sheet_data: MainPageData, sorted_ndts: SortedRows) -> None:
         self.wb = NDTReportExcelPreprocessor().get_workbook()
         self._create_welder_sheets(sorted_ndts)
-        self._create_main_sheet(selected_ndts)
+        self._create_main_sheet(main_sheet_data)
 
         self.wb.save(f"{STATIC_DIR}/report.xlsx")
 
         self._set_hyper_links()
 
 
-    def _create_main_sheet(self, ndts: Sequence[NDTModel]) -> None:
+    def _create_main_sheet(self, data: MainPageData) -> None:
         ws: Worksheet = self.wb.get_sheet_by_name("Main")
 
-        for e, ndt in enumerate(ndts):
-            row = DataRow(
-                **ndt.model_dump(mode="json")
-            ).to_row(ws)
+        for e, row in enumerate(data.summarized_welder_ndts):
+            row = row.to_main_sheet_row(ws)
 
             row = self._style_main_sheet(row, e)
 
             ws.append(row)
+        
+        summarized_group_rows = []
+
+        for row_date, row in data.summarized_welder_group_ndts.items():
+            date_cell = Cell(ws)
+            date_cell.value = row_date.strftime("%d.%m.%Y")
+
+            summarized_group_rows.append([date_cell] + row.to_main_sheet_row(ws)[1:])
+        
+        summarized_group_rows = self._set_coordinates(summarized_group_rows, start_column=18, start_row=3)
+
+        for e, row in enumerate(summarized_group_rows):
+            row = self._style_main_sheet(row, e)
+            for cell in row:
+                ws[cell.coordinate].value = cell.value
+                ws[cell.coordinate].style = cell.style
+                ws[cell.coordinate].fill = copy(cell.fill)
+                ws[cell.coordinate].border = copy(cell.border)
+        
+        dates = Reference(ws, min_col=18, min_row=3, max_row=2 + len(summarized_group_rows))
+
+        chart1 = self._create_chart(ws, "NDT for Quantity welded pipe joints", min_col=20, max_col=22, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="numbers")
+        chart2 = self._create_chart(ws, "NDT for Length of pipe weld joint", min_col=25, max_col=27, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="mm")
+        chart3 = self._create_chart(ws, "Structural NDT", min_col=30, max_col=32, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="mm")
+        chart4 = self._create_chart(ws, "NDT for Quantity welded pipe joints Repair status", min_col=23, max_col=23, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="percents")
+        chart5 = self._create_chart(ws, "NDT for Length of pipe weld joint Repair status", min_col=28, max_col=28, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="percents")
+        chart6 = self._create_chart(ws, "Structural NDT Repair status", min_col=33, max_col=33, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="percents")
+
+        ws.add_chart(chart1, "S7")
+        ws.add_chart(chart2, "X7")
+        ws.add_chart(chart3, "AC7")
+        ws.add_chart(chart4, "S15")
+        ws.add_chart(chart5, "X15")
+        ws.add_chart(chart6, "AC15")
+
+
+    def _set_coordinates(self, rows: Sequence[ExcelRow], start_column: int, start_row: int) -> Sequence[ExcelRow]:
+        result = []
+
+        for row_index, row in enumerate(rows):
+            result_row = []
+
+            for column_index, cell in enumerate(row):
+                cell.column = start_column + column_index
+                cell.row = start_row + row_index
+
+                result_row.append(cell)
+            
+            result.append(result_row)
+    
+        return result
 
     
     def _create_welder_sheets(self, ndts: SortedRows) -> None:
@@ -403,7 +482,7 @@ class NDTReportExcelSaveService:
             ws: Worksheet = self.wb.create_sheet(kleymo)
 
             self._set_table_header_row(
-                list(row_list[0].__dict__().keys()),
+                list(row_list[0].__dict__.keys()),
                 ws
             )
 
@@ -442,7 +521,7 @@ class NDTReportExcelSaveService:
         for e, row in enumerate(ws.iter_rows(min_row=3)):
             cell = row[0]
 
-            cell.hyperlink = f"report.xlsx#{cell.value.strip()}!A1"
+            cell.hyperlink = f"#{cell.value.strip()}!A1"
             cell.style = "Hyperlink"
             if e % 2 == 1:
                 cell.fill = PatternFill(start_color='00CCFFFF', end_color='00CCFFFF', fill_type='solid')
@@ -491,9 +570,9 @@ class NDTReportExcelSaveService:
 
         row = self._style_body_row(row, e)
 
-        row[0].border = right_bold_border
-        row[4].border = right_bold_border
-        row[8].border = right_bold_border
+        row[-6].border = right_bold_border
+        row[-11].border = right_bold_border
+        row[-16].border = right_bold_border
 
         red_fill = PatternFill(start_color="00FF0000", end_color="00FF0000", fill_type="solid")
 
@@ -501,11 +580,11 @@ class NDTReportExcelSaveService:
         if row[-1].value > 5:
             row[-1].fill = red_fill
 
-        if row[-5].value > 5:
-            row[-5].fill = red_fill
+        if row[-6].value > 5:
+            row[-6].fill = red_fill
 
-        if row[-9].value > 5:
-            row[-9].fill = red_fill
+        if row[-11].value > 5:
+            row[-11].fill = red_fill
 
         return row
             
@@ -522,15 +601,23 @@ class NDTReportExcelSaveService:
         ws.add_chart(chart3, "O18")
 
     
-    def _create_chart(self, ws: Worksheet, title: str, min_col: int, max_col: int, min_row: int, max_row: int, dates: Reference) -> LineChart:
+    def _create_chart(self, ws: Worksheet, title: str, min_col: int, max_col: int, min_row: int, max_row: int, dates: Reference, x_axis: str | None = None, y_axis: str | None = None) -> LineChart:
         chart = LineChart()
         
         chart.title = title
         chart.style = 12
         chart.x_axis = DateAxis(crossAx=100)
         chart.y_axis.crossAx = 500
+
+        if x_axis:
+            chart.x_axis.title = x_axis
+
+        if y_axis:
+            chart.y_axis.title = y_axis
+
         chart.x_axis.number_format = 'd-m-yyyy'
         chart.x_axis.majorTimeUnit = "days"
+        chart.width = 20
         
         data = Reference(ws, min_col=min_col, max_col=max_col, min_row=min_row, max_row=max_row)
 

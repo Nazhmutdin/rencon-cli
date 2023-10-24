@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod
-from typing import TypeVar, Union, TypeAlias, Sequence, Literal, Generic
+from typing import TypeVar, Union, TypeAlias, Sequence, Literal
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
