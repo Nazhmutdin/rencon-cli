@@ -32,6 +32,9 @@ ENGINEER_REGISTRY_PATH = pathlib.Path(f"{STATIC_DIR}/engineer_registry.xlsx")
 PDF_PARSER_SRC = pathlib.Path(f"{STATIC_DIR}/src")
 PDF_PARSER_STORE = pathlib.Path(f"{STATIC_DIR}/processed")
 
+ACT_REGISTRY_PATH = pathlib.Path(f"{STATIC_DIR}/acr_registry.xlsx")
+ACT_DATA_FILES_PATH = pathlib.Path(f"{STATIC_DIR}/acts")
+
 CHROME_DRIVER_PATH = pathlib.Path(f"{STATIC_DIR}/chromedriver/chromedriver.exe")
 
 PATH_TO_TESSERACT = pathlib.Path(f"{STATIC_DIR}/tesseract/tesseract.exe")

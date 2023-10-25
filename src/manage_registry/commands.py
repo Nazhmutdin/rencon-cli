@@ -1,23 +1,27 @@
 from typing import TypeAlias
+from pathlib import Path
+from re import match
+import os
+
+from .act_registry_services import ActRegistryService
 
 from click import Command, Option, echo
 
 
-class ManageRegistryCommand(Command):
+
+class ManageActsRegistryCommand(Command):
     def __init__(self) -> None:
 
-        name = ''
+        name = 'manage-act-registry-command'
 
-        mode_option = Option(['--mode', '-m'], type=str, help='w')
+        folder_option = Option(['--folder', '-f'], type=str, help='w')
 
-        super().__init__(name=name, params=[mode_option], callback=self.execute)
+        super().__init__(name=name, params=[folder_option], callback=self.execute)
 
-    
-    def execute(self, mode: str) -> None:
-        mode = mode.lower()
+
+
+    def execute(self, folder: str | Path) -> None:
+        service = ActRegistryService()
+
+        service.update_registry(folder)
         
-        match mode:
-            case 'w':
-                self._ndt_analyze_mode_execution()
-            case _:
-                echo("Invalid mode")

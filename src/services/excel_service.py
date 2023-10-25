@@ -1,7 +1,8 @@
 from typing import (
-    Sequence,
     Literal,
     TypeVar,
+    TypeAlias,
+    Union,
     Any
 )
 from datetime import date, datetime
@@ -15,43 +16,44 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.cell.cell import Cell
 
 
-AnyType = TypeVar("AnyType", bound=str | int | float | date | datetime)
+AnyType: TypeAlias = Union[str, int, float, date, datetime]
 
 
 class ExcelService:
-
-    def load_file(self, path: str | Path, **kwargs) -> Workbook:
+    @staticmethod
+    def load_file(path: str | Path, **kwargs) -> Workbook:
         if not os.path.exists(path):
             raise FileNotFoundError(path)
 
         return load_workbook(path, **kwargs)
 
 
-    def create_file(self, **kwargs) -> Workbook:
+    @staticmethod
+    def create_file(**kwargs) -> Workbook:
         wb = Workbook(**kwargs)
 
         return wb
     
 
-    def data_to_cells(self, data: Sequence[Any], ws: Worksheet) -> Sequence[Cell]:
+    def data_to_cells(self, data: list[Any], ws: Worksheet) -> list[Cell]:
         return [
             Cell(worksheet=ws, value=el) for el in data
         ]
     
 
-    def read_worksheet_by_row(self, ws: Worksheet, **kwargs) -> Sequence[Sequence[AnyType]]:
+    def read_worksheet_by_row(self, ws: Worksheet, **kwargs) -> list[list[AnyType]]:
         return [
             list(row) for row in ws.iter_rows(**kwargs)
         ]
     
 
-    def read_worksheet_by_column(self, ws: Worksheet, **kwargs) -> Sequence[Sequence[AnyType]]:
+    def read_worksheet_by_column(self, ws: Worksheet, **kwargs) -> list[list[AnyType]]:
         return [
             list(column) for column in ws.iter_cols(**kwargs)
         ]
 
 
-    def style_rows(self, rows: Sequence[Sequence[Cell]], mode: Literal["header", "body"]) -> Sequence[Cell]:
+    def style_rows(self, rows: list[list[Cell]], mode: Literal["header", "body"]) -> list[Cell]:
         match mode:
             case "header":
                 return self._style_like_header_rows(rows)
@@ -98,7 +100,7 @@ class ExcelService:
         ws.add_chart(chart, coordinate)
 
     
-    def _style_like_header_rows(self, rows: Sequence[Sequence[Cell]]) -> Sequence[Cell]:
+    def _style_like_header_rows(self, rows: list[list[Cell]]) -> list[Cell]:
         styled_rows = []
 
         for row in rows:
@@ -114,7 +116,7 @@ class ExcelService:
         return styled_rows
 
 
-    def _style_like_body_rows(self, rows: Sequence[Sequence[Cell]]) -> Sequence[Cell]:
+    def _style_like_body_rows(self, rows: list[list[Cell]]) -> list[Cell]:
         styled_rows = []
 
         for e, row in enumerate(rows):
