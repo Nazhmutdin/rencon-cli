@@ -1,12 +1,8 @@
-from typing import Any, TypeAlias, Union, Sequence, TypeVar, Generic
+from typing import TypeAlias, Union, Sequence, TypeVar, Generic
 from datetime import date, datetime
 from re import fullmatch
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from openpyxl.worksheet.worksheet import Worksheet
-from openpyxl.cell.cell import Cell
-
-from src.db.db_tables import Table
 
 
 """
@@ -27,27 +23,7 @@ Project: TypeAlias = str
 DateFrom: TypeAlias = str
 DateBefore: TypeAlias = str
 Count: TypeAlias = int
-DomainModel = TypeVar("DomainModel", bound="BaseDomainModel")
-
-
-"""
-=======================================================================================================
-Base domain model
-=======================================================================================================
-"""
-
-
-class BaseDomainModel(BaseModel):
-    __orm_model__: Table
-
-    class Config:
-        from_attributes=True
-        populate_by_name = True
-
-
-    def to_orm(self) -> Table:
-
-        return self.__orm_model__(**self.__dict__)
+Model = TypeVar("Model", bound=BaseModel)
 
 
 """
@@ -57,7 +33,7 @@ NDT Model
 """
 
 
-class NDTModel(BaseDomainModel):
+class NDTModel(BaseModel):
     full_name: str | None = Field(default=None)
     kleymo: str | int = Field(default=None)
     sicil_number: str | None = Field(default=None)
@@ -109,14 +85,12 @@ Welder Model
 """
 
 
-class WelderModel(BaseDomainModel):
+class WelderModel(BaseModel):
     kleymo: str = Field(max_length=150)
     full_name: str | None  = Field(max_length=150, default=None)
     birthday: str | date | None  = Field(max_length=150, default=None)
     passport_id: str | None = Field(max_length=150, default=None)
     certifications: list["WelderCertificationModel"] | None = Field(max_length=150, default=None)
-
-    __orm_model__ = "WelderTable"
 
 
     @field_validator("kleymo")
@@ -134,7 +108,7 @@ Welder's Certification Model
 """
 
 
-class WelderCertificationModel(BaseDomainModel):
+class WelderCertificationModel(BaseModel):
     kleymo: str | None = Field(default=None)
     certification_id: str = Field(default=None)
     job_title: str = Field(default=None)
@@ -152,8 +126,8 @@ class WelderCertificationModel(BaseDomainModel):
     groups_materials_for_welding: str | None = Field(default=None, alias="Группа свариваемого материала")
     welding_materials: str | None = Field(default=None, alias="Сварочные материалы")
     details_thikness: str | None = Field(default=None, alias="Толщина деталей, мм")
-    outer_diameter: str | None = Field(default=None, alias="аружный диаметр, мм")
-    welding_position: str | None = Field(default=None, alias="оложение при сварке")
+    outer_diameter: str | None = Field(default=None, alias="Наружный диаметр, мм")
+    welding_position: str | None = Field(default=None, alias="Положение при сварке")
     connection_type: str | None = Field(default=None, alias="Вид соединения")
     rod_diameter: str | None = Field(default=None, alias="Диаметр стержня, мм")
     rod_axis_position: str | None = Field(default=None, alias="Положение осей стержней")
@@ -244,7 +218,6 @@ class NDTRequest(DBRequest):
     date_before: Union[DateBefore, None] = None
 
 
-class DBResponse(BaseModel, Generic[DomainModel]):
+class DBResponse(BaseModel, Generic[Model]):
     count: Count
-    summary_count: Count
-    result: Sequence[DomainModel]
+    result: Sequence[Model]

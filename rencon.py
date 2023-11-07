@@ -2,7 +2,7 @@ import click
 
 from src.manage_db.commands import ManageWelderTableCommand
 from src.report_commands.commands import NDTReportCommand
-from src.parse_naks.commands import ParsePersonalCommand
+from src.parse_naks import ParsePersonalCommand
 from src.manage_registry.commands import ManageActsRegistryCommand
 
 

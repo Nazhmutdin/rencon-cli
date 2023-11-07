@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql.elements import BinaryExpression
 from sqlalchemy import or_, select, desc, update
 
-from src.db.db_tables import NDTSummaryTable, NDTTable, WelderCertificationTable, WelderTable
+from src.db.db_tables import NDTSummaryTable, NDTTable, WelderCertificationTable, WelderTable, Table
 from src.db.engine import engine
 from src.domain import (
     WelderModel, 
@@ -16,10 +16,9 @@ from src.domain import (
     DBResponse, 
     WelderRequest,
     NDTRequest, 
-    DomainModel, 
+    Model, 
     Count, 
-    Name,
-    Table
+    Name
 )
 
 
@@ -45,11 +44,11 @@ Abstract Repository
 class BaseRepository(metaclass=ABCMeta):
     __tablename__: Name
     __tablemodel__: Table
-    __tabledomain__: DomainModel
+    __tabledomain__: Model
     session = Session(engine)
 
 
-    def get(self, id: Id) -> DomainModel:
+    def get(self, id: Id) -> Model:
         return self.session.query(self.__tablemodel__).get(id)
 
 
@@ -58,19 +57,19 @@ class BaseRepository(metaclass=ABCMeta):
 
 
     @abstractmethod
-    def _add(self, model: DomainModel) -> None: ...
+    def _add(self, model: Model) -> None: ...
 
 
     @abstractmethod
-    def add(self, data: Sequence[DomainModel]) -> None: ...
+    def add(self, data: Sequence[Model]) -> None: ...
 
 
     @abstractmethod
-    def _update(self, model: DomainModel) -> None: ...
+    def _update(self, model: Model) -> None: ...
 
 
     @abstractmethod
-    def update(self, data: Sequence[DomainModel]) -> None: ...
+    def update(self, data: Sequence[Model]) -> None: ...
 
 
     @property
@@ -112,7 +111,7 @@ class WelderCertificationRepository(BaseRepository):
             except IntegrityError:
                 print(f"ndt with id: {certification.certification_id} already exists")
                 transaction.rollback()
-    
+
 
     def update(self, certifications: Sequence[WelderCertificationModel]) -> None:
         for certification in certifications:
@@ -247,7 +246,6 @@ class NDTRepository(BaseRepository):
         
         return DBResponse(
             count = len(res),
-            summary_count = len(res),
             result = [
                 NDTModel.model_validate(ndt) for ndt in res
             ]

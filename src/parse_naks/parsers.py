@@ -1,13 +1,13 @@
 from time import sleep
+from queue import Queue
 from typing import (
-    Sequence,
     TypeAlias
 )
 
 from re import fullmatch
 from requests import Session
 
-from .extractors import WelderDataExtractor
+from src.parse_naks.extractors import WelderDataExtractor
 
 
 """
@@ -70,25 +70,18 @@ class PersonalParser:
         return data
 
 
-    def parse(self, values: Sequence[Name | Kleymo]) -> Sequence[tuple[MainPage, Sequence[AdditionalPage]]]:
-        result = []
+    def parse(self, value: str) -> tuple[MainPage, list[AdditionalPage]]:
 
-        for value in values:
+        data = self._set_request_data(value)
+        res = self.session.post(self.url, data)
+        sleep(1)
+        main_page = res.text
+        additional_pages = []
 
-            data = self._set_request_data(value)
-            res = self.session.post(self.url, data)
-            sleep(2)
-            main_page = res.text
-            additional_pages = []
+        links = WelderDataExtractor.extract_links(res.text)
 
-            links = WelderDataExtractor.extract_links(res.text)
-
-            for link in links:
-                additional_pages.append(self.session.get(link).text)
-                sleep(1)
-            
-            result.append(
-                (main_page, additional_pages)
-            )
+        for link in links:
+            additional_pages.append(self.session.get(link).text)
+            sleep(.5)
         
-        return result
+        return (main_page, additional_pages)

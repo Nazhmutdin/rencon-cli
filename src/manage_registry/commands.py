@@ -12,12 +12,11 @@ from click import Command, Option, echo
 class ManageActsRegistryCommand(Command):
     def __init__(self) -> None:
 
-        name = 'manage-act-registry-command'
+        name = 'manage-act-registry'
 
         folder_option = Option(['--folder', '-f'], type=str, help='w')
 
         super().__init__(name=name, params=[folder_option], callback=self.execute)
-
 
 
     def execute(self, folder: str | Path) -> None:

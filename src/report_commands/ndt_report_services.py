@@ -1,16 +1,16 @@
 """
 NDT report command can dump ndt data as excel file and pdf file
 Excel file will contain the main sheet (Main) and other sheets named after the kleymo
-Pdf file will contain the first page (Main) with general data and other pages with ndt data belonging to welders
+PDF file will contain the first page (Main) with general data and other pages with ndt data belonging to welders
 """
 
 from dataclasses import dataclass
+from itertools import chain
 from datetime import date
 from copy import copy
 from json import dump
 from typing import (
     Literal, 
-    Sequence,
     TypeAlias,
     Union
 )
@@ -25,8 +25,10 @@ from openpyxl.chart.axis import DateAxis
 from openpyxl.cell.cell import Cell
 
 from src.domain import NDTRequest, DBResponse, NDTModel, Name, Kleymo, CertificationNumber
+from src.services.utils import reverse_dict, limit_dict_pair, limit_dict_values
 from settings import SEARCH_VALUES_FILE, STATIC_DIR, NDT_REPORT_PATH
 from src.db.repository import NDTRepository
+from src.db.db_tables import Table
 from src.services.utils import load_json
 
 
@@ -40,6 +42,7 @@ Types
 Saver: TypeAlias = Union["NDTReportExcelSaveService", "NDTReportPDFSaveService"]
 SortedRows: TypeAlias = dict[str, list['DataRow']]
 ExcelRow: TypeAlias = list[Cell]
+Any: TypeAlias = str | int | float | date
 
 
 """
@@ -51,7 +54,7 @@ Value Objects
 
 @dataclass
 class MainPageData:
-    summarized_welder_ndts: Sequence["DataRow"]
+    summarized_welder_ndts: list["DataRow"]
     summarized_welder_group_ndts: dict[date, "DataRow"]
 
 
@@ -119,6 +122,8 @@ class NDTReportService:
         preprocessor = NDTDataPrepocessor()
 
         saver = self._get_saver(save_mode)
+        preprocessor.preprocess(ndts=ndts, limit=limit)
+
 
         saver.dump_report(
             *preprocessor.preprocess(ndts=ndts, limit=limit)
@@ -138,89 +143,69 @@ class NDTReportService:
 
 class NDTDataPrepocessor:
 
-    def preprocess(self, ndts: Sequence[NDTModel], limit: str | None) -> tuple[MainPageData, SortedRows]:
+    def preprocess(self, ndts: list[NDTModel], limit: str | None) -> tuple[MainPageData, SortedRows]:
 
-        rows = [DataRow(**ndt.__dict__) for ndt in ndts]
+        rows = [self._remove_none_values(DataRow(**ndt.__dict__)) for ndt in ndts]
 
-        sorted_rows_by_kleymo = self._sort_and_limit_ndts(rows, limit)
-        sorted_rows_by_date = self._sort_by_date(rows, limit)
+        limit = limit if limit != None else 10
+
+        sorted_rows_by_kleymo = self._sort_by_kleymo(rows)
+        sorted_rows_by_date = limit_dict_pair(self._sort_by_date(sorted_rows_by_kleymo), limit)
 
         main_page_data = MainPageData(
-            summarized_welder_ndts = [self._sum_rows(row_sequence) for row_sequence in sorted_rows_by_kleymo.values()],
-            summarized_welder_group_ndts = self._reverse_dict(self._get_summarized_welder_groups_ndts(sorted_rows_by_date))
+            summarized_welder_ndts = [self._get_cumulated_row(row_list) for row_list in limit_dict_values(sorted_rows_by_kleymo, limit).values()],
+            summarized_welder_group_ndts = self._summarize_group(reverse_dict(sorted_rows_by_date))
         )
 
-        return (main_page_data, sorted_rows_by_kleymo)
+        return (main_page_data, limit_dict_values(sorted_rows_by_kleymo, limit))
 
 
-    def _reverse_dict(self, rows_dict: dict[date, Sequence[DataRow]]) -> dict[date, Sequence[DataRow]]:
-        return dict(
-            reversed(
-                list(
-                    rows_dict.items()
+    def _remove_none_values(self, row: DataRow) -> DataRow:
+        row = list(row.__dict__.items())
+        result = []
+
+        for el in row[10:-1]:
+            if el[1] ==None:
+                result.append(
+                    (el[0], 0)
                 )
-            )
-        )
-
-
-    def _sort_by_date(self, rows: Sequence[DataRow], limit: int | None) -> dict[date, Sequence[DataRow]]:
-        sorted_rows: dict[date, list[DataRow]] = {}
-        limit = limit if limit != None else 10
-
-        for row in rows:
-            welding_date = row.latest_welding_date
-
-            if welding_date not in sorted_rows:
-                sorted_rows[welding_date] = [row]
                 continue
 
-            if len(sorted_rows[welding_date]) < limit:
-                sorted_rows[welding_date].append(row)
+            result.append(el)
         
-        
-        sorted_rows = {key: sorted_rows[key] for key in list(sorted_rows.keys())[:limit]}
-        
-        return sorted_rows
+        return DataRow(**dict(row[:10] + result))
+    
 
-
-    def _get_summarized_welder_groups_ndts(self, sorted_rows: dict[date, Sequence[DataRow]]) -> dict[date, DataRow]:
-
+    def _summarize_group(self, rows_dict: SortedRows) -> dict[str, DataRow]:
         return {
-            key: self._sum_rows(values) for key, values in sorted_rows.items()
+            key: self._compute_repair_statuses(self._sum_rows(value)) for key, value in rows_dict.items()
         }
 
-
-    def _sum_rows(self, rows: Sequence[DataRow]) -> DataRow:
-
-        result = DataRow(
-            kleymo = rows[0].kleymo,
-            total_weld_1 = sum([row.total_weld_1 for row in rows if row.total_weld_1 != None]),
-            total_ndt_1 = sum([row.total_ndt_1 for row in rows if row.total_ndt_1 != None]),
-            total_accepted_1 = sum([row.total_accepted_1 for row in rows if row.total_accepted_1 != None]),
-            total_repair_1 = sum([row.total_repair_1 for row in rows if row.total_repair_1 != None]),
-            total_weld_2 = sum([row.total_weld_2 for row in rows if row.total_weld_2 != None]),
-            total_ndt_2 = sum([row.total_ndt_2 for row in rows if row.total_ndt_2 != None]),
-            total_accepted_2 = sum([row.total_accepted_2 for row in rows if row.total_accepted_2 != None]),
-            total_repair_2 = sum([row.total_repair_2 for row in rows if row.total_repair_2 != None]),
-            total_weld_3 = sum([row.total_weld_3 for row in rows if row.total_weld_3 != None]),
-            total_ndt_3 = sum([row.total_ndt_3 for row in rows if row.total_ndt_3 != None]),
-            total_accepted_3 = sum([row.total_accepted_3 for row in rows if row.total_accepted_3 != None]),
-            total_repair_3 = sum([row.total_repair_3 for row in rows if row.total_repair_3 != None]),
-        )
-
-        return self._compute_repair_status(result)
-
     
-    def _sort_and_limit_ndts(self, rows: Sequence[DataRow], limit: str | None) -> SortedRows:
-
-        limit = limit if limit != None else 10
-                
+    def _sum_rows(self, rows: list[DataRow]) -> DataRow:
+        return DataRow(
+            total_weld_1 = sum([row.total_weld_1 for row in rows]),
+            total_ndt_1 = sum([row.total_ndt_1 for row in rows]),
+            total_accepted_1 = sum([row.total_accepted_1 for row in rows]),
+            total_repair_1 = sum([row.total_repair_1 for row in rows]),
+            total_weld_2 = sum([row.total_weld_2 for row in rows]),
+            total_ndt_2 = sum([row.total_ndt_2 for row in rows]),
+            total_accepted_2 = sum([row.total_accepted_2 for row in rows]),
+            total_repair_2 = sum([row.total_repair_2 for row in rows]),
+            total_weld_3 = sum([row.total_weld_3 for row in rows]),
+            total_ndt_3 = sum([row.total_ndt_3 for row in rows]),
+            total_accepted_3 = sum([row.total_accepted_3 for row in rows]),
+            total_repair_3 = sum([row.total_repair_3 for row in rows]),
+        )  
+    
+ 
+    def _sort_by_kleymo(self, rows: list[DataRow]) -> SortedRows:     
         sorted_rows: dict[str, list[DataRow]] = {}
 
         for ndt in rows:
             kleymo = ndt.kleymo
 
-            ndt = self._compute_repair_status(ndt)
+            ndt = self._compute_repair_statuses(ndt)
 
             ndt = DataRow(
                 **ndt.__dict__
@@ -230,29 +215,71 @@ class NDTDataPrepocessor:
                 sorted_rows[kleymo] = [ndt]
                 continue
 
-            if len(sorted_rows[kleymo]) < limit:
-                sorted_rows[kleymo].append(ndt)
-    
+            sorted_rows[kleymo].append(ndt)
+        
         return sorted_rows
+
+
+    def _sort_by_date(self, rows: SortedRows) -> dict[date, list[DataRow]]:
+        sorted_rows: dict[date, list[DataRow]] = {}
+        rows: list[DataRow] = list(chain.from_iterable(rows.values()))
+
+        for row in rows:
+            welding_date = row.latest_welding_date
+
+            if welding_date not in sorted_rows:
+                sorted_rows[welding_date] = [row]
+                continue
+
+            sorted_rows[welding_date].append(row)
+        
+        return sorted_rows
+
+
+    def _get_cumulated_row(self, rows: list[DataRow]) -> DataRow:
+        rows = list(reversed(rows))
+
+        cumulated_row = rows[0]
+
+        for row in rows[1:]:
+            cumulated_row = self._compute_ndt_by_previous(row, cumulated_row)
+        
+        return cumulated_row
     
 
-    def _compute_repair_status(self, row: DataRow) -> DataRow:
-        try:
-            row.repair_status_1 = 100 - (row.total_accepted_1 / row.total_ndt_1) * 100
-        except:
-            row.repair_status_1 = float(0)
+    def _compute_ndt_by_previous(self, target_ndt: DataRow, previous_ndt: DataRow) -> DataRow:
+        result = []
+
+        target_ndt = list(target_ndt.__dict__.items())
+        previous_ndt = list(previous_ndt.__dict__.items())
+
+        for target_el, previous_el in zip(target_ndt[10:-1], previous_ndt[10:-1]):
+
+            if target_el[1] < previous_el[1]:
+                result.append(
+                    (target_el[0], target_el[1] + previous_el[1])
+                )
+                continue
+
+            result.append(target_el)
         
-        try:
-            row.repair_status_2 = 100 - (row.total_accepted_2 / row.total_ndt_2) * 100
-        except:
-            row.repair_status_2 = float(0)
+        return DataRow(**dict(target_ndt[:10] + result))
+
+
+    def _compute_repair_statuses(self, row: DataRow) -> DataRow:
         
-        try:
-            row.repair_status_3 = 100 - (row.total_accepted_3 / row.total_ndt_3) * 100
-        except:
-            row.repair_status_3 = float(0)
+        row.repair_status_1 = self._compute_repair_status(row.total_accepted_1, row.total_ndt_1)
+        row.repair_status_2 = self._compute_repair_status(row.total_accepted_2, row.total_ndt_2)
+        row.repair_status_3 = self._compute_repair_status(row.total_accepted_3, row.total_ndt_3)
 
         return row
+    
+
+    def _compute_repair_status(self, total_accepted: float, total_ndt: float):
+        try:
+            return 100 - (total_accepted / total_ndt) * 100
+        except:
+            return 0.0
 
 
 """
@@ -281,7 +308,7 @@ class RequestNDTsService:
         return "name"
         
 
-    def _get_search_values(self, search_values: Sequence[str]) -> tuple[Sequence[Name] | None, Sequence[Kleymo] | None, Sequence[CertificationNumber]] | None:
+    def _get_search_values(self, search_values: list[str]) -> tuple[list[Name] | None, list[Kleymo] | None, list[CertificationNumber]] | None:
         names = []
         kleymos = []
         certification_numbers = []
@@ -302,7 +329,7 @@ class RequestNDTsService:
         return (names, kleymos, certification_numbers)
     
 
-    def _get_kleymos_by_search_date(self) -> Sequence[Kleymo]:
+    def _get_kleymos_by_search_date(self) -> list[Kleymo]:
         res = self.repository.get(
             NDTRequest(
                 date_before = self.search_date,
@@ -313,7 +340,7 @@ class RequestNDTsService:
         return [ndt.kleymo for ndt in res.result]
     
 
-    def _get_names_kleymos_certification_numbers(self, setting_dict: dict[str, str | list]) -> tuple[Sequence[Name], Sequence[Kleymo], Sequence[CertificationNumber]]:
+    def _get_names_kleymos_certification_numbers(self, setting_dict: dict[str, str | list]) -> tuple[list[Name], list[Kleymo], list[CertificationNumber]]:
 
         if self.search_date != None:
             return (None, self._get_kleymos_by_search_date(), None)
@@ -412,7 +439,7 @@ class NDTReportExcelSaveService:
 
         self.wb.save(f"{STATIC_DIR}/report.xlsx")
 
-        self._set_hyper_links()
+        # self._set_hyper_links()
 
 
     def _create_main_sheet(self, data: MainPageData) -> None:
@@ -451,16 +478,22 @@ class NDTReportExcelSaveService:
         chart4 = self._create_chart(ws, "NDT for Quantity welded pipe joints Repair status", min_col=23, max_col=23, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="percents")
         chart5 = self._create_chart(ws, "NDT for Length of pipe weld joint Repair status", min_col=28, max_col=28, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="percents")
         chart6 = self._create_chart(ws, "Structural NDT Repair status", min_col=33, max_col=33, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="percents")
+        chart7 = self._create_chart(ws, "NDT for Quantity welded pipe joints total weld", min_col=19, max_col=19, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="numbers")
+        chart8 = self._create_chart(ws, "NDT for Length of pipe weld joint total weld", min_col=24, max_col=24, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="mm")
+        chart9 = self._create_chart(ws, "Structural NDT total weld", min_col=29, max_col=29, min_row=2, max_row=2 + len(summarized_group_rows), dates=dates, x_axis="dates", y_axis="mm")
 
-        ws.add_chart(chart1, "S7")
-        ws.add_chart(chart2, "X7")
-        ws.add_chart(chart3, "AC7")
-        ws.add_chart(chart4, "S15")
-        ws.add_chart(chart5, "X15")
-        ws.add_chart(chart6, "AC15")
+        ws.add_chart(chart1, "S15")
+        ws.add_chart(chart2, "X15")
+        ws.add_chart(chart3, "AC15")
+        ws.add_chart(chart4, "S25")
+        ws.add_chart(chart5, "X25")
+        ws.add_chart(chart6, "AC25")
+        ws.add_chart(chart7, "S35")
+        ws.add_chart(chart8, "X35")
+        ws.add_chart(chart9, "AC35")
 
 
-    def _set_coordinates(self, rows: Sequence[ExcelRow], start_column: int, start_row: int) -> Sequence[ExcelRow]:
+    def _set_coordinates(self, rows: list[ExcelRow], start_column: int, start_row: int) -> list[ExcelRow]:
         result = []
 
         for row_index, row in enumerate(rows):
@@ -501,7 +534,7 @@ class NDTReportExcelSaveService:
             self._add_charts(ws)
 
     
-    def _set_table_header_row(self, data: Sequence[str | float | None], ws: Worksheet) -> None:
+    def _set_table_header_row(self, data: list[str | float | None], ws: Worksheet) -> None:
         row: ExcelRow = []
 
         for el in data:
@@ -592,13 +625,25 @@ class NDTReportExcelSaveService:
     def _add_charts(self, ws: Worksheet) -> None:
         dates = Reference(ws, min_col=10, min_row=2, max_row=ws.max_row)
 
-        chart1 = self._create_chart(ws, "NDT for Quantity welded pipe joints", min_col=11, max_col=14, min_row=1, max_row=ws.max_row, dates=dates)
-        chart2 = self._create_chart(ws, "NDT for Length of pipe weld joint", min_col=16, max_col=19, min_row=1, max_row=ws.max_row, dates=dates)
-        chart3 = self._create_chart(ws, "Structural NDT", min_col=21, max_col=24, min_row=1, max_row=ws.max_row, dates=dates)
+        chart1 = self._create_chart(ws, "NDT for Quantity welded pipe joints", min_col=12, max_col=14, min_row=1, max_row=ws.max_row, dates=dates)
+        chart2 = self._create_chart(ws, "NDT for Length of pipe weld joint", min_col=17, max_col=19, min_row=1, max_row=ws.max_row, dates=dates)
+        chart3 = self._create_chart(ws, "Structural NDT", min_col=22, max_col=24, min_row=1, max_row=ws.max_row, dates=dates)
+        chart4 = self._create_chart(ws, "NDT for Quantity welded pipe joints total weld", min_col=11, max_col=11, min_row=1, max_row=ws.max_row, dates=dates, x_axis="dates", y_axis="numbers")
+        chart5 = self._create_chart(ws, "NDT for Length of pipe weld joint total weld", min_col=16, max_col=16, min_row=1, max_row=ws.max_row, dates=dates, x_axis="dates", y_axis="mm")
+        chart6 = self._create_chart(ws, "Structural NDT total weld", min_col=21, max_col=21, min_row=1, max_row=ws.max_row, dates=dates, x_axis="dates", y_axis="mm")
+        chart7 = self._create_chart(ws, "NDT for Quantity welded pipe joints Repair status", min_col=15, max_col=15, min_row=1, max_row=ws.max_row, dates=dates, x_axis="dates", y_axis="percents")
+        chart8 = self._create_chart(ws, "NDT for Length of pipe weld joint Repair status", min_col=20, max_col=20, min_row=1, max_row=ws.max_row, dates=dates, x_axis="dates", y_axis="percents")
+        chart9 = self._create_chart(ws, "Structural NDT Repair status", min_col=25, max_col=25, min_row=1, max_row=ws.max_row, dates=dates, x_axis="dates", y_axis="percents")
 
-        ws.add_chart(chart1, "A18")
-        ws.add_chart(chart2, "H18")
-        ws.add_chart(chart3, "O18")
+        ws.add_chart(chart1, "A15")
+        ws.add_chart(chart2, "H15")
+        ws.add_chart(chart3, "O15")
+        ws.add_chart(chart4, "A25")
+        ws.add_chart(chart5, "H25")
+        ws.add_chart(chart6, "O25")
+        ws.add_chart(chart7, "A35")
+        ws.add_chart(chart8, "H35")
+        ws.add_chart(chart9, "O35")
 
     
     def _create_chart(self, ws: Worksheet, title: str, min_col: int, max_col: int, min_row: int, max_row: int, dates: Reference, x_axis: str | None = None, y_axis: str | None = None) -> LineChart:
