@@ -92,6 +92,30 @@ class BaseRepository(metaclass=ABCMeta):
     def delete(self, data: Sequence[Model]) -> None: ...
 
 
+    def _add(self, model: Model) -> None:
+        with SQLalchemyUnitOfWork() as transaction:
+            try:
+                stmt = insert(self.__tablemodel__).values(**model.model_dump())
+                transaction.session.execute(stmt)
+
+                transaction.commit()
+
+            except IntegrityError:
+                transaction.rollback()
+
+    
+    def _update(self, model: Model) -> None:
+        with SQLalchemyUnitOfWork() as transaction:
+            try:
+                stmt = update(self.__tablemodel__).values(**model.__dict__)
+                transaction.session.execute(stmt)
+
+                transaction.commit()
+
+            except IntegrityError:
+                transaction.rollback()
+
+
     @property
     def count(self) -> Count:
         session = get_session()
@@ -109,6 +133,7 @@ Welder's Certification Repository
 
 
 class WelderCertificationRepository(BaseRepository):
+    __tablemodel__: WelderCertificationTable = WelderCertificationTable
 
     def get_many(self, request: NDTRequest) -> DBResponse:
         ...
@@ -124,41 +149,6 @@ class WelderCertificationRepository(BaseRepository):
             self._update(certification)
 
 
-    def _add(self, certification: WelderCertificationModel) -> None:
-
-        with SQLalchemyUnitOfWork() as transaction:
-            try:
-                stmt = insert(WelderCertificationTable).values(**certification.model_dump())
-                transaction.session.execute(stmt)
-
-                transaction.commit()
-            
-                print(f"welder with kleymo {certification.certification_id} successfully appended")
-
-            except IntegrityError:
-                print(f"ndt with id: {certification.certification_id} already exists")
-                transaction.rollback()
-
-
-    def _update(self, certification: WelderCertificationModel) -> None:
-
-        with SQLalchemyUnitOfWork() as transaction:
-            try:
-                stmt = update(WelderCertificationTable).where(
-                    WelderCertificationTable.certification_id == certification.certification_id
-                ).values(**certification.model_dump())
-
-                transaction.session.execute(stmt)
-
-                transaction.commit()
-            
-                print(f"welder certification with id {certification.certification_id} successfully updated")
-
-            except IntegrityError:
-                print(f"certification has not been updated")
-                transaction.rollback()
-
-
 """
 =======================================================================================================
 Welder Repository
@@ -167,6 +157,7 @@ Welder Repository
 
 
 class WelderRepository(BaseRepository):
+    __tablemodel__: WelderTable = WelderTable
     certification_repository = WelderCertificationRepository()
 
     def get_many(self, request: WelderRequest) -> DBResponse:
@@ -186,40 +177,13 @@ class WelderRepository(BaseRepository):
     def _add(self, welder: WelderModel) -> None:
         self.certification_repository.add(welder.certifications)
 
-        with SQLalchemyUnitOfWork() as transaction:
-            try:
-                stmt = insert(WelderTable).values(**welder.model_dump())
-                transaction.session.execute(stmt)
-
-                transaction.commit()
-            
-                print(f"welder with kleymo {welder.kleymo} successfully appended")
-
-            except IntegrityError:
-                print(f"ndt with id: {welder.kleymo} already exists")
-                transaction.rollback()
+        super()._add(welder)
 
 
     def _update(self, welder: WelderModel) -> None:
-        certifications = welder.certifications
+        self.certification_repository.update(welder.certifications)
 
-        self.certification_repository.update(certifications)
-
-        with SQLalchemyUnitOfWork() as transaction:
-            try:
-                stmt = update(WelderTable).where(
-                    WelderTable.kleymo == welder.kleymo
-                ).values(**welder.__dict__)
-
-                transaction.session.execute(stmt)
-
-                transaction.commit()
-            
-                print(f"welder {welder.full_name} ({welder.kleymo}) successfully updated")
-
-            except IntegrityError:
-                print(f"welder {welder.full_name} ({welder.kleymo}) has not been updated")
-                transaction.rollback()
+        super()._update(welder)
 
 
 """
@@ -230,6 +194,7 @@ NDT Repository
 
 
 class NDTRepository(BaseRepository):
+    __tablemodel__: NDTSummaryTable = NDTSummaryTable
 
     def get_many(self, request: NDTRequest) -> DBResponse[NDTModel]: ...
 
@@ -250,37 +215,3 @@ class NDTRepository(BaseRepository):
     def update(self, ndts: Sequence[NDTModel]) -> None:
         for ndt in ndts:
             self._update(ndt)
-
-
-    def _update(self, ndt: NDTModel) -> None:
-        with SQLalchemyUnitOfWork() as transaction:
-            try:
-                stmt = update(NDTSummaryTable).where(
-                    NDTSummaryTable.ndt_id == ndt.ndt_id
-                ).values(**ndt.__dict__)
-
-                transaction.session.execute(stmt)
-
-                transaction.commit()
-            
-                print(f"ndt with id {ndt.kleymo} successfully updated")
-
-            except IntegrityError:
-                print(f"ndt with id {ndt.kleymo} has not been updated")
-                transaction.rollback()
-
-
-    def _add(self, ndt: NDTModel) -> None:
-
-        with SQLalchemyUnitOfWork() as transaction:
-            try:
-                stmt = insert(NDTSummaryTable).values(**ndt.model_dump())
-                transaction.session.execute(stmt)
-
-                transaction.commit()
-            
-                print(f"ndt with id {ndt.kleymo} successfully appended")
-
-            except IntegrityError:
-                print(f"ndt with id {ndt.kleymo} has not been appended")
-                transaction.rollback()
