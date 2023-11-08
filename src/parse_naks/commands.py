@@ -10,7 +10,7 @@ from click import Command, Option
 
 from src.parse_naks.types import Model
 from src.services.utils import load_json
-from settings import SEARCH_VALUES_FILE, GROUPS_FOLDER
+from settings import SEARCH_VALUES_FILE, GROUPS_FOLDER, WELDERS_DATA_JSON_PATH
 from src.services.utils import ThreadProgressBarQueue
 from src.parse_naks.workers import PersonalNaksWorker
 from src.parse_naks.sorter import Sorter
@@ -24,10 +24,10 @@ class ParsePersonalCommand(Command):
     def __init__(self) -> None:
         name = "parse-personal"
 
-        mode_option = Option(["--mode", "-m"], type=str)
-        file_option = Option(["--file"], type=bool)
-        folder_option = Option(["--folder"], type=str)
-        threads_option = Option(["--threads"], type=int, default=1)
+        mode_option = Option(["--mode", "-m"], type=str, help="modes: w - welder, e - engineer")
+        file_option = Option(["--file"], type=bool, help="get search values from search_settings.json file")
+        folder_option = Option(["--folder"], type=str, help="get folder's names in folder as search_values")
+        threads_option = Option(["--threads"], type=int, default=1, help="amount threads")
 
         super().__init__(name=name, params=[mode_option, file_option, folder_option, threads_option], callback=self.execute)
     
@@ -88,6 +88,6 @@ class ParsePersonalCommand(Command):
 
         stack = [el.model_dump(mode="json") for el in sorter.sort_welder_data(stack)]
 
-        with open("data.json", "w", encoding="utf-8") as file:
+        with open(WELDERS_DATA_JSON_PATH, "w", encoding="utf-8") as file:
             json.dump(stack, file, indent=4, ensure_ascii=False)
             file.close()

@@ -3,7 +3,7 @@ from typing import TypeVar
 
 from sqlalchemy.orm import relationship
 
-from .engine import Base
+from .session import Base
 
 
 """

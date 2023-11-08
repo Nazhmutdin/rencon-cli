@@ -1,15 +1,13 @@
 from abc import ABCMeta, abstractmethod
-from typing import TypeVar, Union, TypeAlias, Sequence, Literal
+from typing import TypeVar, Union, TypeAlias, Sequence
 
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.sql.elements import BinaryExpression
-from sqlalchemy import or_, select, desc, update
+from sqlalchemy import update, insert
 
-from src.db.db_tables import NDTSummaryTable, NDTTable, WelderCertificationTable, WelderTable, Table
-from src.db.engine import engine
+from src.db.db_tables import NDTSummaryTable, WelderCertificationTable, WelderTable, Table
+from src.db.session import get_session
 from src.domain import (
-    WelderModel, 
+    WelderModel,
     NDTModel, 
     WelderCertificationModel, 
     DBRequest, 
@@ -17,8 +15,7 @@ from src.domain import (
     WelderRequest,
     NDTRequest, 
     Model, 
-    Count, 
-    Name
+    Count,
 )
 
 
@@ -36,28 +33,51 @@ Id: TypeAlias = Union[str, float, int]
 
 """
 =======================================================================================================
+Unit of Work
+=======================================================================================================
+"""
+
+
+class SQLalchemyUnitOfWork:
+    def __enter__(self):
+        self.session = get_session()
+
+        return self
+
+
+    def __exit__(self):
+        self.session.close()
+
+    
+    def commit(self) -> None:
+        self.session.commit()
+
+
+    def rollback(self) -> None:
+        self.session.rollback()
+
+
+"""
+=======================================================================================================
 Abstract Repository
 =======================================================================================================
 """
 
 
 class BaseRepository(metaclass=ABCMeta):
-    __tablename__: Name
     __tablemodel__: Table
-    __tabledomain__: Model
-    session = Session(engine)
 
 
     def get(self, id: Id) -> Model:
-        return self.session.query(self.__tablemodel__).get(id)
+        session = get_session()
+        result = session.query(self.__tablemodel__).get(id)
+        session.close()
+
+        return result
 
 
     @abstractmethod
-    def get(self, request: Request) -> DBResponse: ...
-
-
-    @abstractmethod
-    def _add(self, model: Model) -> None: ...
+    def get_many(self, request: Request) -> DBResponse: ...
 
 
     @abstractmethod
@@ -65,16 +85,20 @@ class BaseRepository(metaclass=ABCMeta):
 
 
     @abstractmethod
-    def _update(self, model: Model) -> None: ...
+    def update(self, data: Sequence[Model]) -> None: ...
 
 
     @abstractmethod
-    def update(self, data: Sequence[Model]) -> None: ...
+    def delete(self, data: Sequence[Model]) -> None: ...
 
 
     @property
     def count(self) -> Count:
-        return self.session.query(self.__tablemodel__).count()
+        session = get_session()
+        result = session.query(self.__tablemodel__).count()
+        session.close()
+
+        return result
 
 
 """
@@ -85,11 +109,8 @@ Welder's Certification Repository
 
 
 class WelderCertificationRepository(BaseRepository):
-    __tablename__ = "welder_certification_table"
-    __tablemodel__ = WelderCertificationTable
 
-
-    def get(self, request: NDTRequest) -> DBResponse:
+    def get_many(self, request: NDTRequest) -> DBResponse:
         ...
 
     
@@ -98,43 +119,43 @@ class WelderCertificationRepository(BaseRepository):
             self._add(certification)
 
 
+    def update(self, certifications: Sequence[WelderCertificationModel]) -> None:
+        for certification in certifications:
+            self._update(certification)
+
+
     def _add(self, certification: WelderCertificationModel) -> None:
 
-        with self.session.begin_nested() as transaction:
+        with SQLalchemyUnitOfWork() as transaction:
             try:
-                self.session.add(certification.to_orm())
+                stmt = insert(WelderCertificationTable).values(**certification.model_dump())
+                transaction.session.execute(stmt)
 
                 transaction.commit()
             
-                print(f"welder with kleymo {certification.certification_id} successfully appended to {self.__tablename__}")
+                print(f"welder with kleymo {certification.certification_id} successfully appended")
 
             except IntegrityError:
                 print(f"ndt with id: {certification.certification_id} already exists")
                 transaction.rollback()
 
 
-    def update(self, certifications: Sequence[WelderCertificationModel]) -> None:
-        for certification in certifications:
-            self._update(certification)
-
-
     def _update(self, certification: WelderCertificationModel) -> None:
 
-        with self.session.begin_nested() as transaction:
+        with SQLalchemyUnitOfWork() as transaction:
             try:
                 stmt = update(WelderCertificationTable).where(
                     WelderCertificationTable.certification_id == certification.certification_id
-                ).values(**certification.__dict__)
+                ).values(**certification.model_dump())
 
-                self.session.execute(stmt)
+                transaction.session.execute(stmt)
 
                 transaction.commit()
             
                 print(f"welder certification with id {certification.certification_id} successfully updated")
 
-            except IntegrityError as e:
+            except IntegrityError:
                 print(f"certification has not been updated")
-                print(e)
                 transaction.rollback()
 
 
@@ -146,12 +167,9 @@ Welder Repository
 
 
 class WelderRepository(BaseRepository):
-    __tablename__ = "welder_table"
-    __tablemodel__ = WelderTable
     certification_repository = WelderCertificationRepository()
 
-
-    def get(self, request: WelderRequest) -> DBResponse:
+    def get_many(self, request: WelderRequest) -> DBResponse:
         ...
 
     
@@ -168,13 +186,14 @@ class WelderRepository(BaseRepository):
     def _add(self, welder: WelderModel) -> None:
         self.certification_repository.add(welder.certifications)
 
-        with self.session.begin_nested() as transaction:
+        with SQLalchemyUnitOfWork() as transaction:
             try:
-                self.session.add(welder.to_orm())
+                stmt = insert(WelderTable).values(**welder.model_dump())
+                transaction.session.execute(stmt)
 
                 transaction.commit()
             
-                print(f"welder with kleymo {welder.kleymo} successfully appended to {self.__tablename__}")
+                print(f"welder with kleymo {welder.kleymo} successfully appended")
 
             except IntegrityError:
                 print(f"ndt with id: {welder.kleymo} already exists")
@@ -186,21 +205,20 @@ class WelderRepository(BaseRepository):
 
         self.certification_repository.update(certifications)
 
-        with self.session.begin_nested() as transaction:
+        with SQLalchemyUnitOfWork() as transaction:
             try:
                 stmt = update(WelderTable).where(
                     WelderTable.kleymo == welder.kleymo
                 ).values(**welder.__dict__)
 
-                self.session.execute(stmt)
+                transaction.session.execute(stmt)
 
                 transaction.commit()
             
                 print(f"welder {welder.full_name} ({welder.kleymo}) successfully updated")
 
-            except IntegrityError as e:
+            except IntegrityError:
                 print(f"welder {welder.full_name} ({welder.kleymo}) has not been updated")
-                print(e)
                 transaction.rollback()
 
 
@@ -213,43 +231,15 @@ NDT Repository
 
 class NDTRepository(BaseRepository):
 
-    def __init__(self, table_name: Literal["ndt_table",  "ndt_summary_table"]) -> None:
+    def get_many(self, request: NDTRequest) -> DBResponse[NDTModel]: ...
 
-        if table_name not in ["ndt_table",  "ndt_summary_table"]:
-            raise ValueError("This repository accept only 'ndt_table',  'ndt_summary_table'")
+        # stmt = select(self.__tablemodel__, WelderTable.full_name)\
+        #     .join(WelderTable, self.__tablemodel__.kleymo == WelderTable.kleymo)\
+        #     .join(WelderCertificationTable, self.__tablemodel__.kleymo == WelderCertificationTable.kleymo)\
+        #     .filter(or_(*self.search_expressions), *self.filter_expressions).distinct()\
+        #     .order_by(desc(self.__tablemodel__.latest_welding_date))
 
-        match table_name:
-            case "ndt_table":
-                self.__tablename__ = "ndt_table"
-                self.__tablemodel__: NDTTable  = NDTTable
-            
-            case "ndt_summary_table":
-                self.__tablename__ = "ndt_summary_table"
-                self.__tablemodel__: NDTSummaryTable = NDTSummaryTable
-
-
-    def get(self, request: NDTRequest) -> DBResponse[NDTModel]:
-        self.request = request
-        self._get_expressions()
-
-        stmt = select(self.__tablemodel__, WelderTable.full_name)\
-            .join(WelderTable, self.__tablemodel__.kleymo == WelderTable.kleymo)\
-            .join(WelderCertificationTable, self.__tablemodel__.kleymo == WelderCertificationTable.kleymo)\
-            .filter(or_(*self.search_expressions), *self.filter_expressions).distinct()\
-            .order_by(desc(self.__tablemodel__.latest_welding_date))
-        
-
-        conn = self.session.connection()
-
-        res = conn.execute(stmt).mappings().all()
-        
-        
-        return DBResponse(
-            count = len(res),
-            result = [
-                NDTModel.model_validate(ndt) for ndt in res
-            ]
-        )
+        # res = conn.execute(stmt).mappings().all()
 
 
     def add(self, ndts: Sequence[NDTModel]) -> NDTModel:
@@ -263,90 +253,34 @@ class NDTRepository(BaseRepository):
 
 
     def _update(self, ndt: NDTModel) -> None:
-        with self.session.begin_nested() as transaction:
+        with SQLalchemyUnitOfWork() as transaction:
             try:
-                stmt = update(self.__tablemodel__).where(
-                    self.__tablemodel__.ndt_id == ndt.ndt_id
+                stmt = update(NDTSummaryTable).where(
+                    NDTSummaryTable.ndt_id == ndt.ndt_id
                 ).values(**ndt.__dict__)
 
-                self.session.execute(stmt)
+                transaction.session.execute(stmt)
 
                 transaction.commit()
             
                 print(f"ndt with id {ndt.kleymo} successfully updated")
 
-            except IntegrityError as e:
+            except IntegrityError:
                 print(f"ndt with id {ndt.kleymo} has not been updated")
-                print(e)
                 transaction.rollback()
 
 
     def _add(self, ndt: NDTModel) -> None:
 
-        with self.session.begin_nested() as transaction:
+        with SQLalchemyUnitOfWork() as transaction:
             try:
-                self.session.add(ndt.to_orm())
+                stmt = insert(NDTSummaryTable).values(**ndt.model_dump())
+                transaction.session.execute(stmt)
 
                 transaction.commit()
             
                 print(f"ndt with id {ndt.kleymo} successfully appended")
 
-            except IntegrityError as e:
+            except IntegrityError:
                 print(f"ndt with id {ndt.kleymo} has not been appended")
                 transaction.rollback()
-
-
-    def _get_expressions(self) -> None:
-        self.search_expressions: list[BinaryExpression] = []
-        self.filter_expressions: list[BinaryExpression] = []
-
-        self._get_kleymo_expression()
-        self._get_names_expression()
-        self._get_certification_number_expression()
-        self._get_comp_expression()
-        self._get_subcomp_expression()
-        self._get_project_expression()
-        self._get_date_expression()
-
-    
-    def _get_kleymo_expression(self) -> None:
-
-        if self.request.kleymos != None:
-            self.search_expressions.append(self.__tablemodel__.kleymo.in_(self.request.kleymos))
-    
-
-    def _get_names_expression(self) -> None:
-        
-        if self.request.names != None:
-            self.search_expressions.append(WelderTable.full_name.in_(self.request.names))
-
-
-    def _get_certification_number_expression(self) -> None:
-        
-        if self.request.certification_numbers != None:
-            self.search_expressions.append(WelderCertificationTable.certification_number.in_(self.request.certification_numbers))
-
-    
-    def _get_comp_expression(self) -> None:
-        
-        if self.request.comps != None:
-            self.filter_expressions.append(self.__tablemodel__.comp.in_(self.request.comps))
-
-    def _get_subcomp_expression(self) -> None:
-        
-        if self.request.subcomps != None:
-            self.filter_expressions.append(self.__tablemodel__.subcon.in_(self.request.subcomps))
-
-    def _get_project_expression(self) -> None:
-        
-        if self.request.projects != None:
-            self.filter_expressions.append(self.__tablemodel__.project.in_(self.request.projects))
-    
-
-    def _get_date_expression(self) -> None:
-        
-        if self.request.date_before != None:
-            self.filter_expressions.append(self.__tablemodel__.latest_welding_date <= self.request.date_before)
-
-        if self.request.date_from != None:
-            self.filter_expressions.append(self.__tablemodel__.latest_welding_date >= self.request.date_from)
