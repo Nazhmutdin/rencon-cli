@@ -1,20 +1,21 @@
 from os import listdir
+from time import sleep
 from typing import (
     Sequence,
     TypeAlias
 )
 import json
-from time import sleep, time_ns
 
 from click import Command, Option
 
-from src.parse_naks.types import Model
-from src.services.utils import load_json
+from src.parse_naks.extractors import IExtractor, WelderDataExtractor, EngineerDataExtractor
 from settings import SEARCH_VALUES_FILE, GROUPS_FOLDER, WELDERS_DATA_JSON_PATH
 from src.services.utils import ThreadProgressBarQueue
 from src.parse_naks.workers import PersonalNaksWorker
+from src.services.utils import load_json
 from src.parse_naks.sorter import Sorter
-from src.parse_naks.extractors import IExtractor, WelderDataExtractor, EngineerDataExtractor
+from src.parse_naks.types import Model
+
 
 Name: TypeAlias = str
 Kleymo: TypeAlias = str
@@ -27,7 +28,7 @@ class ParsePersonalCommand(Command):
         mode_option = Option(["--mode", "-m"], type=str, help="modes: w - welder, e - engineer")
         file_option = Option(["--file"], type=bool, help="get search values from search_settings.json file")
         folder_option = Option(["--folder"], type=str, help="get folder's names in folder as search_values")
-        threads_option = Option(["--threads"], type=int, default=1, help="amount threads")
+        threads_option = Option(["--threads", "-t"], type=int, default=1, help="amount threads")
 
         super().__init__(name=name, params=[mode_option, file_option, folder_option, threads_option], callback=self.execute)
     

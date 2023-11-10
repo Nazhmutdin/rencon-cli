@@ -13,6 +13,7 @@ DATABASE_NAME = os.getenv("DATABASE_NAME")
 HOST = os.getenv("HOST")
 USER = os.getenv("USER")
 PORT = os.getenv("PORT")
+MODE = os.getenv("MODE")
 
 BASE_DIR = Path.cwd()
 STATIC_DIR = Path(f"{BASE_DIR}/static")

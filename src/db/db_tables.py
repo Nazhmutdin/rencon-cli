@@ -1,5 +1,5 @@
 from sqlalchemy import  String, Column, Date, ForeignKey
-from typing import TypeVar
+from typing import TypeVar, ClassVar
 
 from sqlalchemy.orm import relationship
 
@@ -13,7 +13,7 @@ Types
 """
 
 
-Table = TypeVar("Table", bound="Base")
+Table = TypeVar("Table", bound=Base)
 
 
 """
@@ -32,7 +32,7 @@ class WelderTable(Base):
     birthday = Column(Date(), nullable=True)
     passport_id = Column(String(), nullable=True)
     certifications = relationship("WelderCertificationTable", backref="welder")
-    ndts = relationship("NDTSummaryTable", backref="welder")
+    ndts = relationship("NDTTable", backref="welder")
 
 
 class WelderCertificationTable(Base):
@@ -69,40 +69,8 @@ class WelderCertificationTable(Base):
     welding_equipment = Column(String(), nullable=True)
 
 
-class NDTSummaryTable(Base):
-    __tablename__ = "ndt_summary_table"
-    __domain_model__ = "NDTModel"
-    
-    sicil_number = Column(String(), nullable=True)
-    kleymo = Column(String(4), ForeignKey("welder_table.kleymo"))
-    birthday = Column(Date(), nullable=True)
-    passport_number = Column(String(), nullable=True)
-    nation = Column(String(), nullable=True)
-    comp = Column(String(), nullable=True)
-    subcon = Column(String(), nullable=True)
-    project = Column(String(), nullable=True)
-    latest_welding_date = Column(Date(), nullable=True)
-    total_weld_1 = Column(String(), nullable=True)
-    total_ndt_1 = Column(String(), nullable=True)
-    total_accepted_1 = Column(String(), nullable=True)
-    total_repair_1 = Column(String(), nullable=True)
-    repair_status_1 = Column(String(), nullable=True)
-    total_weld_2 = Column(String(), nullable=True)
-    total_ndt_2 = Column(String(), nullable=True)
-    total_accepted_2 = Column(String(), nullable=True)
-    total_repair_2 = Column(String(), nullable=True)
-    repair_status_2 = Column(String(), nullable=True)
-    total_weld_3 = Column(String(), nullable=True)
-    total_ndt_3 = Column(String(), nullable=True)
-    total_accepted_3 = Column(String(), nullable=True)
-    total_repair_3 = Column(String(), nullable=True)
-    repair_status_3 = Column(String(), nullable=True)
-    ndt_id = Column(String(), primary_key=True)
-
-
 class NDTTable(Base):
     __tablename__ = "ndt_table"
-    __domain_model__ = "NDTSummaryTable"
     
     sicil_number = Column(String(), nullable=True)
     kleymo = Column(String(4), ForeignKey("welder_table.kleymo"))

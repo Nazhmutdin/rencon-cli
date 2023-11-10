@@ -1,20 +1,22 @@
-from abc import ABCMeta, abstractmethod
-from typing import TypeVar, Union, TypeAlias, Sequence
+from abc import ABC, abstractmethod
+from typing import TypeVar, Union, TypeAlias
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import update, insert
+from sqlalchemy import update, insert, delete, inspect, select
+from sqlalchemy.orm import subqueryload
+from sqlalchemy.sql.schema import Column
 
-from src.db.db_tables import NDTSummaryTable, WelderCertificationTable, WelderTable, Table
+from src.db.db_tables import NDTTable, WelderCertificationTable, WelderTable, Table
 from src.db.session import get_session
 from src.domain import (
     WelderModel,
-    NDTModel, 
-    WelderCertificationModel, 
-    DBRequest, 
-    DBResponse, 
+    NDTModel,
+    WelderCertificationModel,
+    DBRequest,
+    DBResponse,
     WelderRequest,
-    NDTRequest, 
-    Model, 
+    NDTRequest,
+    Model,
     Count,
 )
 
@@ -45,7 +47,7 @@ class SQLalchemyUnitOfWork:
         return self
 
 
-    def __exit__(self):
+    def __exit__(self, exception_type, exception_value, traceback):
         self.session.close()
 
     
@@ -64,38 +66,54 @@ Abstract Repository
 """
 
 
-class BaseRepository(metaclass=ABCMeta):
+class BaseRepository(ABC):
     __tablemodel__: Table
+    __domain_model__: Model
 
 
-    def get(self, id: Id) -> Model:
+    def get(self, id: Id) -> Model | None:
         session = get_session()
-        result = session.query(self.__tablemodel__).get(id)
+        stmt = select(self.__tablemodel__).where(
+            self.pk == id
+        )
+
+        result = session.execute(stmt).fetchone()
+        if result == None:
+            session.close()
+            return None
+        
         session.close()
 
-        return result
+        return self.__domain_model__.model_validate(result[0], from_attributes=True)
 
 
     @abstractmethod
     def get_many(self, request: Request) -> DBResponse: ...
 
 
-    @abstractmethod
-    def add(self, data: Sequence[Model]) -> None: ...
+    def add(self, data: list[Model]) -> None:
+        
+        for model in data:
+            self._add(model)
 
 
-    @abstractmethod
-    def update(self, data: Sequence[Model]) -> None: ...
+    def update(self, data: list[Model]) -> None:
+        
+        for model in data:
+            self._update(model)
 
 
-    @abstractmethod
-    def delete(self, data: Sequence[Model]) -> None: ...
+    def delete(self, data: list[Model]) -> None:
+        
+        for model in data:
+            self._delete(model)
 
 
     def _add(self, model: Model) -> None:
         with SQLalchemyUnitOfWork() as transaction:
             try:
-                stmt = insert(self.__tablemodel__).values(**model.model_dump())
+                stmt = insert(self.__tablemodel__).values(**model.orm_data)
+
                 transaction.session.execute(stmt)
 
                 transaction.commit()
@@ -103,11 +121,27 @@ class BaseRepository(metaclass=ABCMeta):
             except IntegrityError:
                 transaction.rollback()
 
-    
+
     def _update(self, model: Model) -> None:
         with SQLalchemyUnitOfWork() as transaction:
             try:
-                stmt = update(self.__tablemodel__).values(**model.__dict__)
+                stmt = update(self.__tablemodel__).where(
+                    self.pk == getattr(model, self.pk.name)
+                ).values(**model.orm_data)
+                transaction.session.execute(stmt)
+
+                transaction.commit()
+
+            except IntegrityError:
+                transaction.rollback()
+
+
+    def _delete(self, model: Model) -> None:
+        with SQLalchemyUnitOfWork() as transaction:
+            try:
+                stmt = delete(self.__tablemodel__).where(
+                    self.pk == getattr(model, self.pk.name)
+                )
                 transaction.session.execute(stmt)
 
                 transaction.commit()
@@ -123,6 +157,11 @@ class BaseRepository(metaclass=ABCMeta):
         session.close()
 
         return result
+    
+
+    @property
+    def pk(self) -> Column:
+        return inspect(self.__tablemodel__).primary_key[0]
 
 
 """
@@ -134,19 +173,10 @@ Welder's Certification Repository
 
 class WelderCertificationRepository(BaseRepository):
     __tablemodel__: WelderCertificationTable = WelderCertificationTable
+    __domain_model__: Model = WelderCertificationModel
 
     def get_many(self, request: NDTRequest) -> DBResponse:
         ...
-
-    
-    def add(self, certifications: Sequence[WelderCertificationModel]) -> Sequence[WelderCertificationModel]:
-        for certification in certifications:
-            self._add(certification)
-
-
-    def update(self, certifications: Sequence[WelderCertificationModel]) -> None:
-        for certification in certifications:
-            self._update(certification)
 
 
 """
@@ -158,32 +188,51 @@ Welder Repository
 
 class WelderRepository(BaseRepository):
     __tablemodel__: WelderTable = WelderTable
+    __domain_model__: Model = WelderModel
     certification_repository = WelderCertificationRepository()
+
+
+    def get(self, id: Id) -> Model | None:
+        session = get_session()
+        stmt = select(self.__tablemodel__).where(
+            self.pk == id
+        ).options(
+            subqueryload(WelderTable.certifications)
+        )
+
+        result = session.execute(stmt).fetchone()
+        if result == None:
+            session.close()
+            return None
+        
+        session.close()
+
+        welder = self.__domain_model__.model_validate(result[0], from_attributes=True)
+        print(len(welder.certifications))
+
+        return welder
+
 
     def get_many(self, request: WelderRequest) -> DBResponse:
         ...
 
     
-    def add(self, welders: Sequence[WelderModel]) -> Sequence[WelderModel]:
+    def add(self, welders: list[WelderModel]) -> None:
         for welder in welders:
             self._add(welder)
+            self.certification_repository.add(welder.certifications)
 
         
-    def update(self, welders: Sequence[NDTModel]) -> None:
+    def update(self, welders: list[NDTModel]) -> None:
         for welder in welders:
+            self.certification_repository.update(welder.certifications)
             self._update(welder)
 
 
-    def _add(self, welder: WelderModel) -> None:
-        self.certification_repository.add(welder.certifications)
-
-        super()._add(welder)
-
-
-    def _update(self, welder: WelderModel) -> None:
-        self.certification_repository.update(welder.certifications)
-
-        super()._update(welder)
+    def delete(self, welders: list[WelderModel]) -> None:
+        for welder in welders:
+            self.certification_repository.delete(welder.certifications)
+            self._delete(welder)
 
 
 """
@@ -194,7 +243,8 @@ NDT Repository
 
 
 class NDTRepository(BaseRepository):
-    __tablemodel__: NDTSummaryTable = NDTSummaryTable
+    __tablemodel__: NDTTable = NDTTable
+    __domain_model__: Model = NDTModel
 
     def get_many(self, request: NDTRequest) -> DBResponse[NDTModel]: ...
 
@@ -206,12 +256,3 @@ class NDTRepository(BaseRepository):
 
         # res = conn.execute(stmt).mappings().all()
 
-
-    def add(self, ndts: Sequence[NDTModel]) -> NDTModel:
-        for ndt in ndts:
-            self._add(ndt)
-
-    
-    def update(self, ndts: Sequence[NDTModel]) -> None:
-        for ndt in ndts:
-            self._update(ndt)

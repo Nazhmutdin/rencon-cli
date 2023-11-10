@@ -1,8 +1,11 @@
-from typing import TypeAlias, Union, Sequence, TypeVar, Generic
+from typing import TypeAlias, Union, Sequence, TypeVar, Generic, Any
 from datetime import date, datetime
 from re import fullmatch
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import inspect
+
+from src.db.db_tables import WelderTable, WelderCertificationTable, NDTTable, Table
 
 
 """
@@ -23,7 +26,42 @@ Project: TypeAlias = str
 DateFrom: TypeAlias = str
 DateBefore: TypeAlias = str
 Count: TypeAlias = int
-Model = TypeVar("Model", bound=BaseModel)
+Model = TypeVar("Model", bound="BaseDomainModel")
+
+
+"""
+=======================================================================================================
+BAse Domain Model
+=======================================================================================================
+"""
+
+
+class BaseDomainModel(BaseModel):
+    __table_model__: Table
+
+    @property
+    def orm_data(self) -> dict[str, Any]:
+        table_keys = list(self.__table_model__.__table__.c.keys())
+        model_data = self.model_dump()
+        
+        return {key: model_data[key] for key in table_keys}
+    
+
+    def __eq__(self, __value: Model) -> bool:
+        if not isinstance(__value, type(self)):
+            return False
+        
+        self_dict = self.model_dump()
+
+        for key, value in __value.model_dump().items():
+            if key not in self_dict:
+                return False
+            
+            if value != self_dict[key]:
+                return False
+        
+        return True
+
 
 
 """
@@ -33,7 +71,7 @@ NDT Model
 """
 
 
-class NDTModel(BaseModel):
+class NDTModel(BaseDomainModel):
     full_name: str | None = Field(default=None)
     kleymo: str | int = Field(default=None)
     sicil_number: str | None = Field(default=None)
@@ -76,6 +114,7 @@ class NDTModel(BaseModel):
             raise ValueError(f"Invalid kleymo ===> {v}")
         
         return str(v).strip()
+    
 
 
 """
@@ -85,7 +124,8 @@ Welder Model
 """
 
 
-class WelderModel(BaseModel):
+class WelderModel(BaseDomainModel):
+    __table_model__ = WelderTable
     kleymo: str = Field(max_length=150)
     full_name: str | None  = Field(max_length=150, default=None)
     birthday: str | date | None  = Field(max_length=150, default=None)
@@ -99,6 +139,21 @@ class WelderModel(BaseModel):
             return v
         
         raise ValueError(f"Invalid kleymo: {v}")
+    
+
+    def __eq__(self, __value: Model) -> bool:
+        if not super().__eq__(__value):
+            return False
+        
+        if len(__value.certifications) != len(self.certifications):
+            return False
+        
+        for i in range(len(self.certifications)):
+            if self.certifications[i] != __value.certifications[i]:
+                return False
+            
+        return True
+    
 
 
 """
@@ -108,13 +163,14 @@ Welder's Certification Model
 """
 
 
-class WelderCertificationModel(BaseModel):
+class WelderCertificationModel(BaseDomainModel):
+    __table_model__ = WelderCertificationTable
     kleymo: str | None = Field(default=None)
     certification_id: str = Field(default=None)
     job_title: str = Field(default=None)
     certification_number: str = Field(default=None)
     certification_date: date | str = Field(default=None)
-    expiration_date: date | str = Field(default=None)
+    expiration_date: date | str | None = Field(default=None)
     renewal_date: date | str | None = Field(default=None)
     insert: str = Field(default=None)
     certification_type: str | None = Field(default=None)
@@ -140,7 +196,7 @@ class WelderCertificationModel(BaseModel):
 
 
     model_config = ConfigDict(
-        populate_by_name=True
+        populate_by_name=True,
     )
 
 
@@ -178,15 +234,17 @@ class WelderCertificationModel(BaseModel):
     
 
     @field_validator("certification_date", "expiration_date")
-    def validate_date(cls, v: date| str) -> str | None:
+    def validate_date(cls, v: date | str | None) -> str | None:
         if type(v) == date: 
             return v
+        
+        if v == None:
+            return None
         
         if fullmatch(r"([0-9]{4}[./-][0-9]{2}[./-][0-9]{2})|([0-9]{2}[./-][0-9]{2}[./-][0-9]{4})", v.strip()):
             return datetime.strptime(v.strip(), "%Y-%m-%d").date()
         
         raise ValueError("Invalid date")
-
 
 
 """

@@ -290,7 +290,7 @@ Infrastructure Services
 
 
 class RequestNDTsService:
-    repository = NDTRepository("ndt_summary_table")
+    repository = NDTRepository()
     """
     This Services creates NDTRequest object for NDTRepository
     """

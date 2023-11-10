@@ -23,16 +23,6 @@ class ManageWelderDataCommand(Command):
         return load(open(WELDERS_DATA_JSON_PATH, "r", encoding="utf-8"))
 
 
-    def _add(self, welders: list[WelderModel]) -> None:
-        self.repo.add(welders)
-
-
-    def _update(self, welders: list[WelderModel]) -> None:
-        self.repo.update(welders)
-
-
-    def _remove(self, welders: list[WelderModel]) -> None: ...
-
 
     def execute(self, mode: Literal["a", "u", "r"]) -> None:
         mode = mode.lower()
@@ -40,13 +30,13 @@ class ManageWelderDataCommand(Command):
 
         match mode:
             case "a":
-                self._add(welders)
+                self.repo.add(welders)
 
             case "u":
-                self._update(welders)
+                self.repo.update(welders)
 
             case "r":
-                self._remove(welders)
+                self.repo.delete(welders)
             
             case _:
                 echo("Invalid mode")
