@@ -1,19 +1,8 @@
 from sqlalchemy import  String, Column, Date, ForeignKey
-from typing import TypeVar, ClassVar
 
 from sqlalchemy.orm import relationship
 
 from .session import Base
-
-
-"""
-=======================================================================================================
-Types
-=======================================================================================================
-"""
-
-
-Table = TypeVar("Table", bound=Base)
 
 
 """
@@ -25,7 +14,6 @@ Tables
 
 class WelderTable(Base):
     __tablename__ = "welder_table"
-    __domain_model__ = "WelderModel"
 
     kleymo = Column(String(4), primary_key=True)
     full_name = Column(String(), nullable=True)
@@ -37,7 +25,6 @@ class WelderTable(Base):
 
 class WelderCertificationTable(Base):
     __tablename__ = "welder_certification_table"
-    __domain_model__ = "WelderCertificationModel"
 
     kleymo = Column(String(4), ForeignKey("welder_table.kleymo"))
     certification_id = Column(String(), nullable=False, primary_key=True)

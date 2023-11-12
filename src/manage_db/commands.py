@@ -3,9 +3,8 @@ from json import load
 
 from click import Command, Option, echo
 
-from src.db.repository import WelderCertificationRepository, WelderRepository
-from src.manage_db.help_messages import welder_table_mode_option_help_message
-from src.domain import WelderCertificationModel, WelderModel
+from src.db.repository import WelderRepository
+from src.domain import WelderModel
 from settings import WELDERS_DATA_JSON_PATH
 
 
@@ -14,29 +13,28 @@ class ManageWelderDataCommand(Command):
         name = "manage-welder-data"
         self.repo = WelderRepository()
 
-        mode_option = Option(["--mode", "-m"], type=str, help=welder_table_mode_option_help_message)
+        mode_option = Option(["--mode", "-m"], type=str, help="a-add\n\nu-update\n\nd-delete")
 
         super().__init__(name=name, params=[mode_option], callback=self.execute)
 
-    
-    def _get_welders(self) -> list[WelderModel]:
-        return load(open(WELDERS_DATA_JSON_PATH, "r", encoding="utf-8"))
+
+    @property
+    def _welders(self) -> list[WelderModel]:
+        return [WelderModel.model_validate(welder_dict) for welder_dict in load(open(WELDERS_DATA_JSON_PATH, "r", encoding="utf-8"))]
 
 
-
-    def execute(self, mode: Literal["a", "u", "r"]) -> None:
+    def execute(self, mode: Literal["a", "u", "d"]) -> None:
         mode = mode.lower()
-        welders = self._get_welders()
 
         match mode:
             case "a":
-                self.repo.add(welders)
+                self.repo.add(self._welders)
 
             case "u":
-                self.repo.update(welders)
+                self.repo.update(self._welders)
 
-            case "r":
-                self.repo.delete(welders)
+            case "d":
+                self.repo.delete(self._welders)
             
             case _:
                 echo("Invalid mode")

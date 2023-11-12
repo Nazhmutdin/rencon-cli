@@ -1,9 +1,8 @@
-.test.env
 .env
+.test.env
 cmd.bat
 venv
 static
-111
 __pycache__/
 .vscode
 .pytest_cache

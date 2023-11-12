@@ -1,1 +1,0 @@
-welder_table_mode_option_help_message = "mode arguments:\n\n- a mode for append data\n\n- u mode for update data (extract data from welder's json file)\n\n"

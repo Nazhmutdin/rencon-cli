@@ -6,18 +6,17 @@ from sqlalchemy import update, insert, delete, inspect, select
 from sqlalchemy.orm import subqueryload
 from sqlalchemy.sql.schema import Column
 
-from src.db.db_tables import NDTTable, WelderCertificationTable, WelderTable, Table
-from src.db.session import get_session
+from src.db.db_tables import NDTTable, WelderCertificationTable, WelderTable
+from src.db.session import Base, get_session
 from src.domain import (
     WelderModel,
     NDTModel,
     WelderCertificationModel,
+    BaseDomainModel,
     DBRequest,
     DBResponse,
     WelderRequest,
-    NDTRequest,
-    Model,
-    Count,
+    NDTRequest
 )
 
 
@@ -66,7 +65,7 @@ Abstract Repository
 """
 
 
-class BaseRepository(ABC):
+class BaseRepository[Model: BaseDomainModel, Table: Base](ABC):
     __tablemodel__: Table
     __domain_model__: Model
 
@@ -151,7 +150,7 @@ class BaseRepository(ABC):
 
 
     @property
-    def count(self) -> Count:
+    def count(self) -> int:
         session = get_session()
         result = session.query(self.__tablemodel__).count()
         session.close()
@@ -171,11 +170,11 @@ Welder's Certification Repository
 """
 
 
-class WelderCertificationRepository(BaseRepository):
-    __tablemodel__: WelderCertificationTable = WelderCertificationTable
-    __domain_model__: Model = WelderCertificationModel
+class WelderCertificationRepository(BaseRepository[WelderCertificationModel, WelderCertificationTable]):
+    __tablemodel__ = WelderCertificationTable
+    __domain_model__ = WelderCertificationModel
 
-    def get_many(self, request: NDTRequest) -> DBResponse:
+    def get_many(self, request: NDTRequest) -> DBResponse[WelderCertificationModel]:
         ...
 
 
@@ -186,18 +185,18 @@ Welder Repository
 """
 
 
-class WelderRepository(BaseRepository):
-    __tablemodel__: WelderTable = WelderTable
-    __domain_model__: Model = WelderModel
+class WelderRepository(BaseRepository[WelderModel, WelderTable]):
+    __tablemodel__ = WelderTable
+    __domain_model__ = WelderModel
     certification_repository = WelderCertificationRepository()
 
 
-    def get(self, id: Id) -> Model | None:
+    def get(self, id: Id) -> WelderModel | None:
         session = get_session()
         stmt = select(self.__tablemodel__).where(
             self.pk == id
         ).options(
-            subqueryload(WelderTable.certifications)
+            subqueryload(self.__tablemodel__.certifications)
         )
 
         result = session.execute(stmt).fetchone()
@@ -208,29 +207,28 @@ class WelderRepository(BaseRepository):
         session.close()
 
         welder = self.__domain_model__.model_validate(result[0], from_attributes=True)
-        print(len(welder.certifications))
 
         return welder
 
 
-    def get_many(self, request: WelderRequest) -> DBResponse:
+    def get_many(self, request: WelderRequest) -> DBResponse[WelderModel]:
         ...
 
     
-    def add(self, welders: list[WelderModel]) -> None:
-        for welder in welders:
+    def add(self, data: list[WelderModel]) -> None:
+        for welder in data:
             self._add(welder)
             self.certification_repository.add(welder.certifications)
 
         
-    def update(self, welders: list[NDTModel]) -> None:
-        for welder in welders:
+    def update(self, data: list[WelderModel]) -> None:
+        for welder in data:
             self.certification_repository.update(welder.certifications)
             self._update(welder)
 
 
-    def delete(self, welders: list[WelderModel]) -> None:
-        for welder in welders:
+    def delete(self, data: list[WelderModel]) -> None:
+        for welder in data:
             self.certification_repository.delete(welder.certifications)
             self._delete(welder)
 
@@ -242,9 +240,9 @@ NDT Repository
 """
 
 
-class NDTRepository(BaseRepository):
-    __tablemodel__: NDTTable = NDTTable
-    __domain_model__: Model = NDTModel
+class NDTRepository(BaseRepository[NDTModel, NDTTable]):
+    __tablemodel__ = NDTTable
+    __domain_model__ = NDTModel
 
     def get_many(self, request: NDTRequest) -> DBResponse[NDTModel]: ...
 
@@ -255,4 +253,3 @@ class NDTRepository(BaseRepository):
         #     .order_by(desc(self.__tablemodel__.latest_welding_date))
 
         # res = conn.execute(stmt).mappings().all()
-

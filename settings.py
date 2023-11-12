@@ -50,3 +50,5 @@ SKIPED_VALUES_FILE = pathlib.Path(f"{STATIC_DIR}/skiped_values.txt")
 
 ACST_DATA_JSON_PATH = pathlib.Path(f"{STATIC_DIR}/acsts.json")
 ACST_REGISTRY_PATH = pathlib.Path(f"{STATIC_DIR}/acst_registry.xlsx")
+
+TEST_WELDERS = pathlib.Path(f"{STATIC_DIR}/test_welders.json")

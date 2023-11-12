@@ -3,9 +3,9 @@ from datetime import date, datetime
 from re import fullmatch
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import inspect
 
-from src.db.db_tables import WelderTable, WelderCertificationTable, NDTTable, Table
+from src.db.db_tables import WelderTable, WelderCertificationTable, NDTTable
+from src.db.session import Base
 
 
 """
@@ -25,7 +25,6 @@ SubCompany: TypeAlias = str
 Project: TypeAlias = str
 DateFrom: TypeAlias = str
 DateBefore: TypeAlias = str
-Count: TypeAlias = int
 Model = TypeVar("Model", bound="BaseDomainModel")
 
 
@@ -36,7 +35,7 @@ BAse Domain Model
 """
 
 
-class BaseDomainModel(BaseModel):
+class BaseDomainModel[Table: Base](BaseModel):
     __table_model__: Table
 
     @property
@@ -72,6 +71,7 @@ NDT Model
 
 
 class NDTModel(BaseDomainModel):
+    __table_model__ = NDTTable
     full_name: str | None = Field(default=None)
     kleymo: str | int = Field(default=None)
     sicil_number: str | None = Field(default=None)
@@ -141,7 +141,7 @@ class WelderModel(BaseDomainModel):
         raise ValueError(f"Invalid kleymo: {v}")
     
 
-    def __eq__(self, __value: Model) -> bool:
+    def __eq__(self, __value: "WelderModel") -> bool:
         if not super().__eq__(__value):
             return False
         
@@ -277,5 +277,5 @@ class NDTRequest(DBRequest):
 
 
 class DBResponse(BaseModel, Generic[Model]):
-    count: Count
+    count: int
     result: Sequence[Model]
