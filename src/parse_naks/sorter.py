@@ -9,6 +9,10 @@ class Sorter:
 
         for el in data:
             if el.kleymo not in data_dict:
+                
+                if el.kleymo == None:
+                    continue
+
                 welder = WelderModel.model_validate(el, from_attributes=True)
                 welder.certifications = [WelderCertificationModel.model_validate(el, from_attributes=True)]
                 data_dict[el.kleymo] = welder

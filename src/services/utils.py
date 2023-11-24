@@ -1,7 +1,6 @@
 from typing import Mapping, Sequence, TypeVar, Any
 from dateutil.parser import parser
 from queue import Queue
-from datetime import date
 from re import compile
 
 from pathlib import Path

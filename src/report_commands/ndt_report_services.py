@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from itertools import chain
 from datetime import date
 from copy import copy
-from json import dump
 from typing import (
     Literal, 
     TypeAlias,
@@ -24,11 +23,10 @@ from openpyxl.utils import get_column_letter
 from openpyxl.chart.axis import DateAxis
 from openpyxl.cell.cell import Cell
 
-from src.domain import NDTRequest, DBResponse, NDTModel, Name, Kleymo, CertificationNumber
+from src.domain import NDTRequest, DBResponse, WelderNDTModel
 from src.services.utils import reverse_dict, limit_dict_pair, limit_dict_values
 from settings import SEARCH_VALUES_FILE, STATIC_DIR, NDT_REPORT_PATH
 from src.db.repository import NDTRepository
-from src.db.db_tables import Table
 from src.services.utils import load_json
 
 
@@ -143,7 +141,7 @@ class NDTReportService:
 
 class NDTDataPrepocessor:
 
-    def preprocess(self, ndts: list[NDTModel], limit: str | None) -> tuple[MainPageData, SortedRows]:
+    def preprocess(self, ndts: list[WelderNDTModel], limit: str | None) -> tuple[MainPageData, SortedRows]:
 
         rows = [self._remove_none_values(DataRow(**ndt.__dict__)) for ndt in ndts]
 
@@ -308,7 +306,7 @@ class RequestNDTsService:
         return "name"
         
 
-    def _get_search_values(self, search_values: list[str]) -> tuple[list[Name] | None, list[Kleymo] | None, list[CertificationNumber]] | None:
+    def _get_search_values(self, search_values: list[str]) -> tuple[list[str] | None, list[str | int] | None, list[str]] | None:
         names = []
         kleymos = []
         certification_numbers = []
@@ -329,7 +327,7 @@ class RequestNDTsService:
         return (names, kleymos, certification_numbers)
     
 
-    def _get_kleymos_by_search_date(self) -> list[Kleymo]:
+    def _get_kleymos_by_search_date(self) -> list[str | int]:
         res = self.repository.get(
             NDTRequest(
                 date_before = self.search_date,
@@ -340,7 +338,7 @@ class RequestNDTsService:
         return [ndt.kleymo for ndt in res.result]
     
 
-    def _get_names_kleymos_certification_numbers(self, setting_dict: dict[str, str | list]) -> tuple[list[Name], list[Kleymo], list[CertificationNumber]]:
+    def _get_names_kleymos_certification_numbers(self, setting_dict: dict[str, str | list]) -> tuple[list[str], list[str | int], list[str]]:
 
         if self.search_date != None:
             return (None, self._get_kleymos_by_search_date(), None)
@@ -365,8 +363,8 @@ class RequestNDTsService:
         )
     
 
-    def request_data(self) -> DBResponse[NDTModel]:
-        return self.repository.get(
+    def request_data(self) -> DBResponse[WelderNDTModel]:
+        return self.repository.get_many(
             self._dump_ndt_request()
         )
 

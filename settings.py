@@ -52,3 +52,5 @@ ACST_DATA_JSON_PATH = pathlib.Path(f"{STATIC_DIR}/acsts.json")
 ACST_REGISTRY_PATH = pathlib.Path(f"{STATIC_DIR}/acst_registry.xlsx")
 
 TEST_WELDERS = pathlib.Path(f"{STATIC_DIR}/test_welders.json")
+
+SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://mail.google.com/"]

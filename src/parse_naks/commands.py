@@ -25,7 +25,7 @@ class ParsePersonalCommand(Command):
     def __init__(self) -> None:
         name = "parse-personal"
 
-        mode_option = Option(["--mode", "-m"], type=str, help="modes: w - welder, e - engineer")
+        mode_option = Option(["--mode", "-m"], type=str, default="-", help="modes: w - welder, e - engineer")
         file_option = Option(["--file"], type=bool, help="get search values from search_settings.json file")
         folder_option = Option(["--folder"], type=str, help="get folder's names in folder as search_values")
         threads_option = Option(["--threads", "-t"], type=int, default=1, help="amount threads")
@@ -40,15 +40,12 @@ class ParsePersonalCommand(Command):
 
 
     def _set_extractor(self, mode: str) -> IExtractor: 
-        mode = mode.lower()
 
         match mode:
             case "w":
                 return WelderDataExtractor()
             case "e":
                 return EngineerDataExtractor()
-            case _:
-                raise ValueError("Invalid mode")
             
 
     def _fill_queue(self, queue: ThreadProgressBarQueue, file: str | None, folder: str | None) -> None:
@@ -81,6 +78,13 @@ class ParsePersonalCommand(Command):
         self._fill_queue(queue, file, folder)
 
         stack: list[Model] = []
+
+        mode = mode.lower()
+
+        if mode not in ["w", "e"]:
+            print("Invalid mode")
+            return
+
         extractor = self._set_extractor(mode)
         queue.init_progress_bar()
         self._init_threads(threads, queue, stack, extractor)
